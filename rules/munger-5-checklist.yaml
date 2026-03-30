@@ -1,0 +1,64 @@
+- name: "Munger #1: Circle of Competence"
+  category: quality
+  type: soft_gate
+  source_type: book
+  source_detail: "Munger - Poor Charlie's Almanack, Ch. 3"
+  description: "Only invest in businesses you genuinely understand — intellectual honesty about the limits of your knowledge"
+  weight: 1.0
+  conditions:
+    - metric: circle_of_competence_fit
+      operator: gte
+      value: 3
+      weight: 1.0
+
+- name: "Munger #2: Durable Moat"
+  category: quality
+  type: soft_gate
+  source_type: book
+  source_detail: "Munger - Poor Charlie's Almanack, Ch. 5"
+  description: "A business worth owning at any price must have a protective moat — pricing power, switching costs, or network effects"
+  weight: 1.0
+  conditions:
+    - metric: moat_score
+      operator: gte
+      value: 3
+      weight: 1.0
+
+- name: "Munger #3: Trustworthy Management"
+  category: quality
+  type: soft_gate
+  source_type: book
+  source_detail: "Munger - Poor Charlie's Almanack, Ch. 4"
+  description: "Management must be honest, capable, and owner-oriented — avoid companies run by promoters or empire-builders"
+  weight: 1.0
+  conditions:
+    - metric: management_score
+      operator: gte
+      value: 3
+      weight: 1.0
+
+- name: "Munger #4: Financial Strength"
+  category: risk
+  type: soft_gate
+  source_type: book
+  source_detail: "Munger - Poor Charlie's Almanack, Ch. 7"
+  description: "Excessive debt amplifies errors and can turn a temporary setback into a permanent loss of capital"
+  weight: 1.0
+  conditions:
+    - metric: debt_to_ebitda
+      operator: lte
+      value: 4
+      weight: 1.0
+
+- name: "Munger #5: Meaningful Margin of Safety"
+  category: valuation
+  type: soft_gate
+  source_type: book
+  source_detail: "Munger - Poor Charlie's Almanack, Ch. 6"
+  description: "Price paid must leave a sufficient cushion for the inevitable errors in forecasting value"
+  weight: 1.0
+  conditions:
+    - metric: intrinsic_value_discount
+      operator: gte
+      value: 0.2
+      weight: 1.0

@@ -1,0 +1,64 @@
+- name: "Graham: P/E Ratio Ceiling"
+  category: valuation
+  type: hard_gate
+  source_type: book
+  source_detail: "Graham - The Intelligent Investor, Ch. 14"
+  description: "Defensive investor must not pay more than 15x earnings — overpaying for growth embeds permanent risk"
+  weight: 1.0
+  conditions:
+    - metric: pe_ratio
+      operator: lte
+      value: 15
+      weight: 1.0
+
+- name: "Graham: P/B Ratio Ceiling"
+  category: valuation
+  type: hard_gate
+  source_type: book
+  source_detail: "Graham - The Intelligent Investor, Ch. 14"
+  description: "Price-to-book above 1.5x offers little asset-based margin of safety for the defensive investor"
+  weight: 1.0
+  conditions:
+    - metric: pb_ratio
+      operator: lte
+      value: 1.5
+      weight: 1.0
+
+- name: "Graham: Graham Number (P/E x P/B)"
+  category: valuation
+  type: scoring
+  source_type: book
+  source_detail: "Graham - The Intelligent Investor, Ch. 14"
+  description: "Product of P/E and P/B should not exceed 22.5 — the combined valuation multiplier for the defensive investor"
+  weight: 1.0
+  conditions:
+    - metric: graham_number
+      operator: lte
+      value: 22.5
+      weight: 1.0
+
+- name: "Graham: Current Ratio Floor"
+  category: risk
+  type: soft_gate
+  source_type: book
+  source_detail: "Graham - The Intelligent Investor, Ch. 14"
+  description: "Current assets should be at least twice current liabilities to ensure adequate liquidity"
+  weight: 1.0
+  conditions:
+    - metric: current_ratio
+      operator: gte
+      value: 2
+      weight: 1.0
+
+- name: "Graham: Uninterrupted Earnings Growth"
+  category: quality
+  type: scoring
+  source_type: book
+  source_detail: "Graham - The Intelligent Investor, Ch. 14"
+  description: "At least 10 consecutive years of positive earnings demonstrates the stability Graham required"
+  weight: 1.0
+  conditions:
+    - metric: earnings_growth_years
+      operator: gte
+      value: 10
+      weight: 1.0

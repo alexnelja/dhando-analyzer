@@ -1,0 +1,116 @@
+- name: "Dhandho #1: Existing Business"
+  category: quality
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 2"
+  description: "Buy existing businesses with proven track records, not startups or unproven models"
+  weight: 1.0
+  conditions:
+    - metric: years_operating
+      operator: gte
+      value: 5
+      weight: 1.0
+
+- name: "Dhandho #2: Simple Business in Slow-Changing Industry"
+  category: quality
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 3"
+  description: "Industries with slow rates of change protect competitive advantages — avoid high-disruption sectors"
+  weight: 1.0
+  conditions:
+    - metric: industry_change_rate
+      operator: lte
+      value: 0.1
+      weight: 1.0
+
+- name: "Dhandho #3: Distressed Business in Distressed Industry"
+  category: distress
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 4"
+  description: "Temporary distress (not permanent impairment) creates asymmetric buying opportunities"
+  weight: 1.0
+  conditions:
+    - metric: distress_permanence_score
+      operator: lte
+      value: 3.5
+      weight: 1.0
+
+- name: "Dhandho #4: Durable Competitive Advantage"
+  category: quality
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 5"
+  description: "Wide or narrow moats protect returns on capital and earnings power over time"
+  weight: 1.0
+  conditions:
+    - metric: moat_score
+      operator: gte
+      value: 3
+      weight: 1.0
+
+- name: "Dhandho #5: Few Big Bets"
+  category: position_sizing
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 6"
+  description: "Concentrated Kelly-sized position only when the odds are decisively in your favour"
+  weight: 1.0
+  conditions:
+    - metric: kelly_position
+      operator: gte
+      value: 0.1
+      weight: 1.0
+
+- name: "Dhandho #6: Fixate on Arbitrage"
+  category: valuation
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 7"
+  description: "Seek situations with a clear catalyst that closes the gap between price and intrinsic value"
+  weight: 1.0
+  conditions:
+    - metric: arbitrage_spread
+      operator: gte
+      value: 0.05
+      weight: 1.0
+
+- name: "Dhandho #7: Margin of Safety"
+  category: valuation
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 8"
+  description: "Only buy when the discount to intrinsic value is large enough to absorb errors in estimation"
+  weight: 1.0
+  conditions:
+    - metric: intrinsic_value_discount
+      operator: gte
+      value: 0.3
+      weight: 1.0
+
+- name: "Dhandho #8: Low Risk, High Uncertainty"
+  category: risk
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 9"
+  description: "High uncertainty does not equal high risk. Embrace uncertainty when downside is limited and upside is large"
+  weight: 1.0
+  conditions:
+    - metric: uncertainty_score
+      operator: gte
+      value: 6
+      weight: 1.0
+
+- name: "Dhandho #9: Copycat, Not Innovator"
+  category: quality
+  type: scoring
+  source_type: book
+  source_detail: "Pabrai - The Dhandho Investor, Ch. 10"
+  description: "Let innovators absorb R&D costs and market-creation risk; invest in proven imitators with low innovation spend"
+  weight: 1.0
+  conditions:
+    - metric: innovation_score
+      operator: lte
+      value: 3
+      weight: 1.0

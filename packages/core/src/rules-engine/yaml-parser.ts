@@ -60,8 +60,45 @@ export function parseRuleYaml(yaml: string, file: string): RuleDocument & { cond
 }
 
 /**
+ * Parse a YAML string that may contain either a single rule document (object)
+ * or a list of rule documents (array). Returns all validated rules found.
+ *
+ * Useful for multi-rule files such as pre-seeded principle collections.
+ *
+ * @param yaml - Raw YAML content.
+ * @param file - Filename used in error messages.
+ * @returns Array of validated {@link RuleDocument} objects (one or more).
+ * @throws {@link RuleYamlParseError} if parsing or validation fails.
+ */
+export function parseRuleYamlMany(
+  yaml: string,
+  file: string,
+): (RuleDocument & { conditions: RuleCondition[] })[] {
+  let raw: unknown;
+  try {
+    raw = load(yaml);
+  } catch (err) {
+    throw new RuleYamlParseError(file, err);
+  }
+
+  const docs = Array.isArray(raw) ? raw : [raw];
+  const results: (RuleDocument & { conditions: RuleCondition[] })[] = [];
+
+  for (let i = 0; i < docs.length; i++) {
+    const result = RuleDocumentSchema.safeParse(docs[i]);
+    if (!result.success) {
+      throw new RuleYamlParseError(file, `Item[${i}]: ${result.error.message}`);
+    }
+    results.push(result.data as RuleDocument & { conditions: RuleCondition[] });
+  }
+
+  return results;
+}
+
+/**
  * Load every `.yaml` or `.yml` file from a directory.
- * Invalid files emit a console warning and are skipped — they do not abort the load.
+ * Each file may contain a single rule document (object) or a list of rule
+ * documents (array). Invalid files emit a console warning and are skipped.
  *
  * @param dir - Absolute path to the rules directory.
  * @returns Array of successfully parsed {@link RuleDocument} objects.
@@ -75,7 +112,7 @@ export function loadRulesFromDirectory(dir: string): (RuleDocument & { condition
     const filePath = join(dir, entry);
     try {
       const content = readFileSync(filePath, 'utf-8');
-      results.push(parseRuleYaml(content, entry));
+      results.push(...parseRuleYamlMany(content, entry));
     } catch (err) {
       console.warn(`[rules-engine] Skipping "${entry}": ${String(err)}`);
     }
