@@ -8,3 +8,5 @@ export * from './api/dataroma.js';
 export * from './api/gdelt.js';
 export * from './api/finbert.js';
 export * from './rules-engine/index.js';
+export * from './scoring/index.js';
+export * from './screener/index.js';
