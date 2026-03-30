@@ -7,3 +7,4 @@ export * from './api/yahoo.js';
 export * from './api/dataroma.js';
 export * from './api/gdelt.js';
 export * from './api/finbert.js';
+export * from './rules-engine/index.js';
