@@ -1,4 +1,12 @@
 import type { DatabaseConnection } from '../data/db.js';
+
+function safeParse<T>(json: string, fallback: T): T {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return fallback;
+  }
+}
 import type { Rule } from '../models/rule.js';
 import type { EvaluationResult } from './evaluator.js';
 
@@ -47,10 +55,10 @@ function rowToSnapshot(row: SnapshotRow): DecisionSnapshot {
     id: row.id,
     investmentId: row.investment_id,
     snapshotAt: new Date(row.snapshot_at),
-    activeRules: JSON.parse(row.active_rules_json) as Rule[],
-    scores: JSON.parse(row.scores_json) as EvaluationResult[],
+    activeRules: safeParse(row.active_rules_json, [] as Rule[]),
+    scores: safeParse(row.scores_json, [] as EvaluationResult[]),
     kellyPosition: row.kelly_position,
-    scenarios: row.scenario_json ? (JSON.parse(row.scenario_json) as SnapshotScenario[]) : [],
+    scenarios: row.scenario_json ? safeParse(row.scenario_json, [] as SnapshotScenario[]) : [],
   };
 }
 

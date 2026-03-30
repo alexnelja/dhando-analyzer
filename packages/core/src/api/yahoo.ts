@@ -2,6 +2,13 @@ import type { DataProvider, FundamentalsData, PriceData } from './types.js';
 
 const BASE_URL = 'https://query1.finance.yahoo.com/v8/finance/chart';
 
+function validateTicker(ticker: string): string {
+  if (!/^[A-Za-z0-9.\-]{1,20}$/.test(ticker)) {
+    throw new Error(`Invalid ticker format: ${ticker}`);
+  }
+  return encodeURIComponent(ticker);
+}
+
 export function createYahooClient(): DataProvider {
   async function fetchJson(url: string) {
     const response = await fetch(url, { headers: { 'User-Agent': 'DhandoAnalyzer/1.0' } });
@@ -19,7 +26,8 @@ export function createYahooClient(): DataProvider {
     },
 
     async getPrice(ticker: string): Promise<PriceData> {
-      const data = await fetchJson(`${BASE_URL}/${ticker}?interval=1d&range=1d`);
+      const safeTicker = validateTicker(ticker);
+      const data = await fetchJson(`${BASE_URL}/${safeTicker}?interval=1d&range=1d`);
       const result = data?.chart?.result?.[0];
       if (!result) throw new Error(`No data for ${ticker}`);
 

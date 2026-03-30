@@ -71,7 +71,7 @@ describe('DataProvider failover', () => {
 
     const provider = createProvider(policy);
     await expect(provider.getFundamentals('CPI.JSE')).rejects.toThrow(
-      'All data providers failed for CPI.JSE'
+      /All data providers failed for CPI\.JSE/
     );
   });
 });

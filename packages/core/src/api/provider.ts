@@ -23,7 +23,8 @@ export function createProvider(policy: FailoverPolicy) {
       }
     }
 
-    throw new Error(`All data providers failed for ${ticker}`);
+    const errorDetails = errors.map((e, i) => `${policy.fallbackChain[i]?.name ?? 'unknown'}: ${e.message}`).join('; ');
+    throw new Error(`All data providers failed for ${ticker}: ${errorDetails}`);
   }
 
   return {

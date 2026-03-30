@@ -2,6 +2,13 @@ import type { DataProvider, FundamentalsData, PriceData } from './types.js';
 
 const BASE_URL = 'https://eodhd.com/api';
 
+function validateTicker(ticker: string): string {
+  if (!/^[A-Za-z0-9.\-]{1,20}$/.test(ticker)) {
+    throw new Error(`Invalid ticker format: ${ticker}`);
+  }
+  return encodeURIComponent(ticker);
+}
+
 export function createEodhdClient(apiKey: string): DataProvider {
   async function fetchJson(url: string) {
     const response = await fetch(url);
@@ -15,8 +22,9 @@ export function createEodhdClient(apiKey: string): DataProvider {
     name: 'eodhd',
 
     async getFundamentals(ticker: string): Promise<FundamentalsData> {
+      const safeTicker = validateTicker(ticker);
       const data = await fetchJson(
-        `${BASE_URL}/fundamentals/${ticker}?api_token=${apiKey}&fmt=json`
+        `${BASE_URL}/fundamentals/${safeTicker}?api_token=${apiKey}&fmt=json`
       );
 
       const incomeYearly = data?.Financials?.Income_Statement?.yearly ?? {};
@@ -37,8 +45,9 @@ export function createEodhdClient(apiKey: string): DataProvider {
     },
 
     async getPrice(ticker: string): Promise<PriceData> {
+      const safeTicker = validateTicker(ticker);
       const data = await fetchJson(
-        `${BASE_URL}/eod/${ticker}?api_token=${apiKey}&fmt=json&order=d&limit=1`
+        `${BASE_URL}/eod/${safeTicker}?api_token=${apiKey}&fmt=json&order=d&limit=1`
       );
       const latest = Array.isArray(data) ? data[0] : data;
       return {

@@ -8,6 +8,14 @@ export interface GdeltArticle {
   tone: number;
 }
 
+interface GdeltRawArticle {
+  title?: string;
+  url?: string;
+  seendate?: string;
+  domain?: string;
+  tone?: string | number;
+}
+
 export function createGdeltClient() {
   async function fetchJson(url: string) {
     const response = await fetch(url);
@@ -28,12 +36,12 @@ export function createGdeltClient() {
       });
       const data = await fetchJson(`${BASE_URL}?${params}`);
       const articles = data?.articles ?? [];
-      return articles.map((a: any) => ({
+      return articles.map((a: GdeltRawArticle) => ({
         title: a.title ?? '',
         url: a.url ?? '',
         seenDate: a.seendate ?? '',
         domain: a.domain ?? '',
-        tone: parseFloat(a.tone) || 0,
+        tone: typeof a.tone === 'number' ? a.tone : (parseFloat(String(a.tone ?? '0')) || 0),
       }));
     },
 
