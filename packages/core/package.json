@@ -13,10 +13,13 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.39.0",
-    "better-sqlite3": "^11.8.0"
+    "better-sqlite3": "^11.8.0",
+    "js-yaml": "^4.1.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/js-yaml": "^4.0.9",
     "drizzle-kit": "^0.30.0",
     "vitest": "^3.0.0",
     "typescript": "^5.7.0"
