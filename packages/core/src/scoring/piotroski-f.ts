@@ -57,6 +57,9 @@ export interface PiotroskiFResult {
  * @param score - Integer F-Score in range [0, 9].
  */
 export function interpretPiotroskiF(score: number): PiotroskiInterpretation {
+  if (score < 0 || score > 9 || !Number.isInteger(score)) {
+    throw new RangeError(`Piotroski F-Score must be an integer in [0, 9], got ${score}`);
+  }
   if (score >= 8) return 'strong';
   if (score >= 3) return 'average';
   return 'weak';

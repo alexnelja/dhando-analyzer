@@ -102,10 +102,10 @@ export function registerScreenCommand(program: Command): void {
           id,
         );
 
-        if (rows.length === 0) {
+        if (rows.length < 2) {
           console.error(
-            `No financials found for "${inv.name}". ` +
-            `Add them first with: dhando financials add ${id} ...`,
+            `Investment requires at least 2 annual financial periods for YoY comparison. ` +
+            `Currently have: ${rows.length}. Add financials with: dhando financials add ${id} --year <year> ...`
           );
           process.exitCode = 1;
           return;
@@ -113,7 +113,18 @@ export function registerScreenCommand(program: Command): void {
 
         const [currentRow, priorRow] = rows;
         const currentFin = rowToFinancials(currentRow);
-        const priorFin = rowToFinancials(priorRow ?? currentRow);
+        const priorFin = rowToFinancials(priorRow);
+
+        // Price data is required for accurate scoring
+        const price = inv.intrinsic_value;
+        if (!price || price <= 0) {
+          console.error(
+            `Investment "${inv.name}" has no market price set. ` +
+            `Use "dhando financials fetch ${id}" to pull price data, or update the investment manually.`
+          );
+          process.exitCode = 1;
+          return;
+        }
 
         const input: ScreenerPipelineInput = {
           investment: {
@@ -123,8 +134,8 @@ export function registerScreenCommand(program: Command): void {
           },
           financials: { current: currentFin, prior: priorFin },
           price: {
-            price: inv.intrinsic_value ?? 10,
-            marketCap: (inv.intrinsic_value ?? 10) * 1_000_000,
+            price,
+            marketCap: price * 1_000_000,
           },
         };
 

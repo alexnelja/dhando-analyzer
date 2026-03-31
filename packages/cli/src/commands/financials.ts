@@ -71,6 +71,20 @@ export function registerFinancialsCommands(program: Command): void {
           return;
         }
 
+        const financialFields = [opts.revenue, opts.netIncome, opts.ebitda, opts.totalAssets, opts.totalDebt, opts.cash, opts.capex, opts.fcf, opts.workingCapital];
+        if (!financialFields.some(v => v !== undefined)) {
+          console.error('At least one financial metric must be provided.');
+          process.exitCode = 1;
+          return;
+        }
+
+        const currentYear = new Date().getFullYear();
+        if (opts.year < 1900 || opts.year > currentYear + 1) {
+          console.error(`Year must be between 1900 and ${currentYear + 1}, got ${opts.year}`);
+          process.exitCode = 1;
+          return;
+        }
+
         const id = randomUUID();
         db.run(
           `INSERT INTO financials

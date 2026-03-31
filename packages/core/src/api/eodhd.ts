@@ -6,7 +6,8 @@ function validateTicker(ticker: string): string {
   if (!/^[A-Za-z0-9.\-]{1,20}$/.test(ticker)) {
     throw new Error(`Invalid ticker format: ${ticker}`);
   }
-  return encodeURIComponent(ticker);
+  // Return the raw ticker; URL path encoding is handled by URL construction.
+  return ticker;
 }
 
 export function createEodhdClient(apiKey: string): DataProvider {
@@ -15,7 +16,11 @@ export function createEodhdClient(apiKey: string): DataProvider {
     if (!response.ok) {
       throw new Error(`EODHD API error: ${response.status}`);
     }
-    return response.json();
+    try {
+      return await response.json();
+    } catch {
+      throw new Error(`EODHD API returned invalid JSON for ${response.status}`);
+    }
   }
 
   return {
@@ -23,9 +28,10 @@ export function createEodhdClient(apiKey: string): DataProvider {
 
     async getFundamentals(ticker: string): Promise<FundamentalsData> {
       const safeTicker = validateTicker(ticker);
-      const data = await fetchJson(
-        `${BASE_URL}/fundamentals/${safeTicker}?api_token=${apiKey}&fmt=json`
-      );
+      const url = new URL(`${BASE_URL}/fundamentals/${safeTicker}`);
+      url.searchParams.set('api_token', apiKey);
+      url.searchParams.set('fmt', 'json');
+      const data = await fetchJson(url.toString());
 
       const incomeYearly = data?.Financials?.Income_Statement?.yearly ?? {};
       const balanceYearly = data?.Financials?.Balance_Sheet?.yearly ?? {};
@@ -46,9 +52,12 @@ export function createEodhdClient(apiKey: string): DataProvider {
 
     async getPrice(ticker: string): Promise<PriceData> {
       const safeTicker = validateTicker(ticker);
-      const data = await fetchJson(
-        `${BASE_URL}/eod/${safeTicker}?api_token=${apiKey}&fmt=json&order=d&limit=1`
-      );
+      const url = new URL(`${BASE_URL}/eod/${safeTicker}`);
+      url.searchParams.set('api_token', apiKey);
+      url.searchParams.set('fmt', 'json');
+      url.searchParams.set('order', 'd');
+      url.searchParams.set('limit', '1');
+      const data = await fetchJson(url.toString());
       const latest = Array.isArray(data) ? data[0] : data;
       return {
         price: latest.close,
