@@ -40,4 +40,19 @@ contextBridge.exposeInMainWorld('dhando', {
   privateMarkets: {
     analyze: (input: unknown) => ipcRenderer.invoke('dhando:privatemarkets:analyze', input),
   },
+
+  macro: {
+    vix: () => ipcRenderer.invoke('dhando:macro:vix'),
+    creditSpread: () => ipcRenderer.invoke('dhando:macro:credit-spread'),
+    yieldCurve: () => ipcRenderer.invoke('dhando:macro:yield-curve'),
+    fedRate: () => ipcRenderer.invoke('dhando:macro:fed-rate'),
+    sentiment: () => ipcRenderer.invoke('dhando:macro:sentiment'),
+    saRepo: () => ipcRenderer.invoke('dhando:macro:sa-repo'),
+    zarUsd: () => ipcRenderer.invoke('dhando:macro:zar-usd'),
+  },
+
+  stock: {
+    insiders: (symbol: string) => ipcRenderer.invoke('dhando:stock:insiders', symbol),
+    recommendations: (symbol: string) => ipcRenderer.invoke('dhando:stock:recommendations', symbol),
+  },
 });

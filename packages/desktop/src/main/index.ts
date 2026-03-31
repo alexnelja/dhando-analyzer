@@ -23,6 +23,8 @@ import { loadRulesFromDirectory } from '@dhando/core';
 import { runDistressRadar } from '@dhando/core';
 import { analyzePrivateMarket } from '@dhando/core';
 import { runDealAnalyzer } from '@dhando/core';
+import { createFredClient } from '@dhando/core';
+import { createFinnhubClient } from '@dhando/core';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -35,6 +37,10 @@ function getDb() {
   }
   return db;
 }
+
+// Macro data clients — keys are optional; handlers return empty arrays when absent.
+const fredClient = createFredClient(process.env.FRED_API_KEY ?? '');
+const finnhubClient = createFinnhubClient(process.env.FINNHUB_API_KEY ?? '');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -178,5 +184,22 @@ function registerIpcHandlers() {
     (_event, input: Parameters<typeof analyzePrivateMarket>[0]) => {
       return analyzePrivateMarket(input);
     },
+  );
+
+  // ── FRED Macro Data ───────────────────────────────────────────────────────
+  ipcMain.handle('dhando:macro:vix', () => fredClient.getVix());
+  ipcMain.handle('dhando:macro:credit-spread', () => fredClient.getCreditSpread());
+  ipcMain.handle('dhando:macro:yield-curve', () => fredClient.getYieldCurve());
+  ipcMain.handle('dhando:macro:fed-rate', () => fredClient.getFedFundsRate());
+  ipcMain.handle('dhando:macro:sentiment', () => fredClient.getConsumerSentiment());
+  ipcMain.handle('dhando:macro:sa-repo', () => fredClient.getSaRepoRate());
+  ipcMain.handle('dhando:macro:zar-usd', () => fredClient.getZarUsd());
+
+  // ── Finnhub Stock Data ────────────────────────────────────────────────────
+  ipcMain.handle('dhando:stock:insiders', (_event, symbol: string) =>
+    finnhubClient.getInsiderTransactions(symbol),
+  );
+  ipcMain.handle('dhando:stock:recommendations', (_event, symbol: string) =>
+    finnhubClient.getRecommendations(symbol),
   );
 }
