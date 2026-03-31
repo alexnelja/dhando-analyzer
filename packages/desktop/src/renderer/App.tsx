@@ -11,6 +11,7 @@ import { DistressRadar } from './pages/DistressRadar';
 import { MagicFormula } from './pages/MagicFormula';
 import { PrivateMarkets } from './pages/PrivateMarkets';
 import { Rules } from './pages/Rules';
+import { Calculator } from './pages/Calculator';
 
 export function App() {
   useEffect(() => {
@@ -30,6 +31,7 @@ export function App() {
           <Route path="/compare" element={<Compare />} />
           <Route path="/distress" element={<DistressRadar />} />
           <Route path="/magic-formula" element={<MagicFormula />} />
+          <Route path="/calculator" element={<Calculator />} />
           <Route path="/private-markets" element={<PrivateMarkets />} />
           <Route path="/rules" element={<Rules />} />
         </Routes>

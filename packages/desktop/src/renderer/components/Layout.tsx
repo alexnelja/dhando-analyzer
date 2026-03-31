@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/compare', label: 'Compare', icon: '⚖' },
   { path: '/distress', label: 'Distress Radar', icon: '⚠' },
   { path: '/magic-formula', label: 'Magic Formula', icon: '✦' },
+  { path: '/calculator', label: 'Calculator', icon: '⊞' },
   { path: '/private-markets', label: 'Private Markets', icon: '◇' },
   { path: '/rules', label: 'Rules', icon: '≡' },
 ];
