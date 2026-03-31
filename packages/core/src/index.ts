@@ -8,6 +8,8 @@ export * from './api/yahoo.js';
 export * from './api/dataroma.js';
 export * from './api/gdelt.js';
 export * from './api/finbert.js';
+export * from './api/fred.js';
+export * from './api/finnhub.js';
 export * from './rules-engine/index.js';
 export * from './scoring/index.js';
 export * from './screener/index.js';
