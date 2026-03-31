@@ -3,7 +3,7 @@ import { formatCompact, formatCurrency } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge, type TrafficLightStatus } from '../components/TrafficLight';
 import { DataTable, type Column } from '../components/DataTable';
-import { listWatchlist, calculateIntrinsicValue, updateInvestment, type InvestmentRow, type DCFResult } from '../lib/ipc';
+import { listWatchlist, calculateIntrinsicValue, updateInvestment, saveFinancials, type InvestmentRow, type DCFResult } from '../lib/ipc';
 
 interface FinancialInputs {
   revenue: number;
@@ -244,6 +244,27 @@ export function Screener() {
         });
       } catch (saveErr) {
         console.error('[Screener] Failed to persist scores:', saveErr);
+      }
+
+      // Save financials to central store so other pages can auto-load them
+      try {
+        const currentYear = new Date().getFullYear();
+        await saveFinancials({
+          investmentId: selectedInvestment.id,
+          year: currentYear,
+          revenue: current.revenue,
+          netIncome: current.netIncome,
+          ebitda: current.ebitda,
+          totalAssets: current.totalAssets,
+          totalDebt: current.longTermDebt,
+          cash: current.cash,
+          capex: current.capex,
+          fcf: current.fcf,
+          workingCapital: current.workingCapital,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (saveErr) {
+        console.error('[Screener] Failed to save financials:', saveErr);
       }
     } catch (err) {
       console.error('[Screener] handleRun failed:', err);

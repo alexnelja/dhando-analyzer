@@ -45,6 +45,7 @@ const EMPTY_FORM: Omit<WatchlistEntry, 'id'> = {
   exchange: '',
   sector: '',
   industry: '',
+  notes: '',
 };
 
 interface PortfolioModalState {
@@ -132,6 +133,7 @@ export function Watchlist() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   // Stock search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -343,6 +345,20 @@ export function Watchlist() {
 
   const columns: Column<InvestmentRow>[] = [
     {
+      key: 'expand',
+      header: '',
+      render: (row) => (
+        <button
+          onClick={() => setExpandedRowId(expandedRowId === row.id ? null : row.id)}
+          className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-700 transition-transform"
+          style={{ transform: expandedRowId === row.id ? 'rotate(90deg)' : 'rotate(0deg)' }}
+          title="View thesis and scores"
+        >
+          &#9654;
+        </button>
+      ),
+    },
+    {
       key: 'name',
       header: 'Name',
       render: (row) => (
@@ -452,15 +468,135 @@ export function Watchlist() {
 
       {loading ? (
         <div className="text-gray-400 text-sm">Loading...</div>
+      ) : rows.length === 0 ? (
+        <div className="text-gray-400 text-sm italic px-4 py-8 text-center border border-gray-200/60 rounded-lg">
+          No investments in watchlist. Add your first entry above.
+        </div>
       ) : (
-        <DataTable
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          columns={columns as any}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          rows={rows as any}
-          keyField="id"
-          emptyMessage="No investments in watchlist. Add your first entry above."
-        />
+        <div className="overflow-x-auto rounded-lg border border-gray-200/60">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200/60" style={{ backgroundColor: '#f3f2ee' }}>
+                <th className="px-4 py-3 w-8" />
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Ticker</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Sector</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100/60">
+              {rows.map((row) => (
+                <React.Fragment key={row.id}>
+                  <tr className="hover:bg-gray-50/60 transition-colors">
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setExpandedRowId(expandedRowId === row.id ? null : row.id)}
+                        className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-700 transition-transform duration-150"
+                        style={{ transform: expandedRowId === row.id ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                        title="View thesis and scores"
+                      >
+                        &#9654;
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700 font-medium">{row.name}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <span className="font-mono text-sm text-gray-600">{row.ticker ?? '\u2014'}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <span className="text-xs text-gray-500 capitalize">{row.type.replace(/_/g, ' ')}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <StatusDropdown
+                        currentStatus={row.status}
+                        onStatusChange={(newStatus) => handleStatusChange(row.id, newStatus)}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <span className="text-xs text-gray-500">{row.sector ?? '\u2014'}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center gap-2 justify-end">
+                        {(row.status === 'ready_to_buy' || row.status === 'held') && (
+                          <button
+                            onClick={() => openPortfolioModal(row)}
+                            className="px-2 py-1 rounded text-xs font-medium transition-colors hover:bg-green-50"
+                            style={{ color: '#788c5d', border: '1px solid rgba(120,140,93,0.3)' }}
+                          >
+                            + Portfolio
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleAdvance(row.id)}
+                          className="px-2 py-1 rounded text-xs font-medium transition-colors hover:bg-orange-50"
+                          style={{ color: '#d97757', border: '1px solid rgba(217,119,87,0.3)' }}
+                          disabled={['held', 'exited', 'rejected'].includes(row.status)}
+                        >
+                          Advance
+                        </button>
+                        <button
+                          onClick={() => handleRemove(row.id)}
+                          className="px-2 py-1 rounded text-xs font-medium text-red-500 transition-colors hover:bg-red-50"
+                          style={{ border: '1px solid rgba(224,82,82,0.3)' }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedRowId === row.id && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-4 bg-gray-50/80 border-t border-gray-100">
+                        <div className="max-w-2xl space-y-3">
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Investment Thesis</p>
+                            {row.notes ? (
+                              <p className="text-sm text-gray-700 leading-relaxed">{row.notes}</p>
+                            ) : (
+                              <p className="text-xs text-gray-400 italic">No thesis captured. Edit the investment to add one.</p>
+                            )}
+                          </div>
+                          {(row.moat_score !== null || row.management_score !== null || row.circle_of_competence_fit !== null || row.intrinsic_value !== null) && (
+                            <div>
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Stored Scores</p>
+                              <div className="flex flex-wrap gap-3">
+                                {row.moat_score !== null && (
+                                  <div className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs">
+                                    <span className="text-gray-500">Moat: </span>
+                                    <span className="font-semibold text-gray-800">{row.moat_score}/10</span>
+                                  </div>
+                                )}
+                                {row.management_score !== null && (
+                                  <div className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs">
+                                    <span className="text-gray-500">Management: </span>
+                                    <span className="font-semibold text-gray-800">{row.management_score}/10</span>
+                                  </div>
+                                )}
+                                {row.circle_of_competence_fit !== null && (
+                                  <div className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs">
+                                    <span className="text-gray-500">Composite Score: </span>
+                                    <span className="font-semibold text-gray-800">{row.circle_of_competence_fit}/100</span>
+                                  </div>
+                                )}
+                                {row.intrinsic_value !== null && (
+                                  <div className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-xs">
+                                    <span className="text-gray-500">Intrinsic Value: </span>
+                                    <span className="font-semibold text-gray-800">R {row.intrinsic_value.toFixed(2)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Add Investment Modal */}
@@ -593,6 +729,17 @@ export function Watchlist() {
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 bg-gray-50"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Investment Thesis (optional)</label>
+                <textarea
+                  value={form.notes ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                  placeholder="Why is this a good investment? What's your thesis?"
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 resize-none"
+                />
               </div>
             </div>
 

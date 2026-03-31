@@ -3,7 +3,7 @@ import { formatCompact } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge } from '../components/TrafficLight';
 import { DataTable, type Column } from '../components/DataTable';
-import { listWatchlist, runDealAnalysis, type InvestmentRow } from '../lib/ipc';
+import { listWatchlist, runDealAnalysis, getFinancials, type InvestmentRow } from '../lib/ipc';
 
 interface ScenarioInput {
   name: 'bear' | 'base' | 'bull';
@@ -54,6 +54,68 @@ const DEFAULT_SCENARIOS: ScenarioInput[] = [
   { name: 'bull', revenueGrowthRate: 0.18, ebitdaMargin: 0.22, exitMultiple: 12, probability: 0.25 },
 ];
 
+/** Percentage input: stores as decimal, displays as percentage */
+function PctInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  step,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  placeholder?: string;
+  step?: number;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      <div className="relative">
+        <input
+          type="number"
+          step={step ?? 0.1}
+          value={value === 0 ? '' : (value * 100).toFixed(1)}
+          onChange={(e) => onChange(parseFloat(e.target.value || '0') / 100)}
+          placeholder={placeholder ?? '0'}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm pr-8 focus:outline-none focus:border-orange-400"
+        />
+        <span className="absolute right-3 top-2 text-gray-400 text-sm">%</span>
+      </div>
+    </div>
+  );
+}
+
+/** Smaller PctInput variant for scenario cards */
+function ScenarioPctInput({
+  label,
+  value,
+  onChange,
+  step,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+}) {
+  return (
+    <div>
+      <label className="text-xs text-gray-500">{label}</label>
+      <div className="relative mt-0.5">
+        <input
+          type="number"
+          step={step ?? 0.1}
+          value={value === 0 ? '' : (value * 100).toFixed(1)}
+          onChange={(e) => onChange(parseFloat(e.target.value || '0') / 100)}
+          placeholder="0"
+          className="w-full border border-gray-200 rounded px-2 py-1 text-xs pr-7 focus:outline-none"
+        />
+        <span className="absolute right-2 top-1 text-gray-400 text-xs">%</span>
+      </div>
+    </div>
+  );
+}
+
 export function DealAnalyzer() {
   const [investments, setInvestments] = useState<InvestmentRow[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -71,6 +133,7 @@ export function DealAnalyzer() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DealAnalysis | null>(null);
   const [error, setError] = useState('');
+  const [financialsLoaded, setFinancialsLoaded] = useState(false);
 
   useEffect(() => {
     listWatchlist().then(setInvestments).catch(console.error);
@@ -84,7 +147,7 @@ export function DealAnalyzer() {
       selectedInvestment.intrinsic_value !== null)
   );
 
-  // Sync moat/management scores from stored investment when selection changes
+  // Sync moat/management scores and stored financials when selection changes
   useEffect(() => {
     if (!selectedInvestment) return;
     if (selectedInvestment.moat_score !== null) {
@@ -93,6 +156,14 @@ export function DealAnalyzer() {
     if (selectedInvestment.management_score !== null) {
       setManagementScore(selectedInvestment.management_score);
     }
+    setFinancialsLoaded(false);
+    getFinancials(selectedInvestment.id).then((rows) => {
+      if (rows.length > 0) {
+        const latest = rows[0];
+        setBaseRevenue(latest.revenue);
+        setFinancialsLoaded(true);
+      }
+    }).catch(console.error);
   }, [selectedId]);
 
   const probabilitySum = scenarios.reduce((sum, s) => sum + s.probability, 0);
@@ -114,10 +185,9 @@ export function DealAnalyzer() {
     setResult(null);
 
     const ownerEarnings = selectedInvestment.intrinsic_value !== null
-      ? selectedInvestment.intrinsic_value * (sharesOutstanding / 1)  // intrinsic_value is per-share; scale back
+      ? selectedInvestment.intrinsic_value * (sharesOutstanding / 1)
       : baseRevenue * 0.12;
 
-    // Use stored screener fields when available, fall back to sensible defaults
     const compositeScore = selectedInvestment.circle_of_competence_fit ?? 58;
     const storedMoat = selectedInvestment.moat_score ?? moatScore;
     const storedManagement = selectedInvestment.management_score ?? managementScore;
@@ -202,37 +272,64 @@ export function DealAnalyzer() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Current Price</label>
-            <input type="number" value={currentPrice} onChange={(e) => setCurrentPrice(Number(e.target.value))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+            <label className="block text-xs font-medium text-gray-600 mb-1">Current Price (R)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-2 text-gray-400 text-sm">R</span>
+              <input
+                type="number"
+                value={currentPrice}
+                onChange={(e) => setCurrentPrice(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Base Revenue</label>
-            <input type="number" value={baseRevenue} onChange={(e) => setBaseRevenue(Number(e.target.value))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+            <label className="block text-xs font-medium text-gray-600 mb-1">Base Revenue (R)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-2 text-gray-400 text-sm">R</span>
+              <input
+                type="number"
+                value={baseRevenue}
+                onChange={(e) => setBaseRevenue(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            {financialsLoaded && (
+              <p className="text-xs text-green-600 mt-1">Auto-filled from stored financials</p>
+            )}
           </div>
         </div>
 
         <div className="grid grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Discount Rate</label>
-            <input type="number" step="0.01" value={discountRate} onChange={(e) => setDiscountRate(Number(e.target.value))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Terminal Growth</label>
-            <input type="number" step="0.01" value={terminalGrowth} onChange={(e) => setTerminalGrowth(Number(e.target.value))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Win Probability</label>
-            <input type="number" step="0.05" min="0" max="1" value={winProbability} onChange={(e) => setWinProbability(Number(e.target.value))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
-          </div>
+          <PctInput
+            label="Discount Rate (%)"
+            value={discountRate}
+            onChange={setDiscountRate}
+            placeholder="10"
+            step={0.5}
+          />
+          <PctInput
+            label="Terminal Growth (%)"
+            value={terminalGrowth}
+            onChange={setTerminalGrowth}
+            placeholder="2"
+            step={0.5}
+          />
+          <PctInput
+            label="Win Probability (%)"
+            value={winProbability}
+            onChange={setWinProbability}
+            placeholder="60"
+            step={5}
+          />
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Projection Years</label>
-            <input type="number" value={projectionYears} onChange={(e) => setProjectionYears(Number(e.target.value))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400" />
+            <input
+              type="number"
+              value={projectionYears}
+              onChange={(e) => setProjectionYears(Number(e.target.value))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+            />
           </div>
         </div>
 
@@ -253,38 +350,42 @@ export function DealAnalyzer() {
                   color: scenario.name === 'bull' ? '#788c5d' : scenario.name === 'base' ? '#6a9bcc' : '#e05252'
                 }}>{scenario.name}</p>
                 <div className="space-y-2">
-                  <div>
-                    <label className="text-xs text-gray-500">Revenue Growth</label>
-                    <input type="number" step="0.01" value={scenario.revenueGrowthRate}
-                      onChange={(e) => updateScenario(idx, 'revenueGrowthRate', Number(e.target.value))}
-                      className="w-full border border-gray-200 rounded px-2 py-1 text-xs mt-0.5 focus:outline-none" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500">EBITDA Margin</label>
-                    <input type="number" step="0.01" value={scenario.ebitdaMargin}
-                      onChange={(e) => updateScenario(idx, 'ebitdaMargin', Number(e.target.value))}
-                      className="w-full border border-gray-200 rounded px-2 py-1 text-xs mt-0.5 focus:outline-none" />
-                  </div>
+                  <ScenarioPctInput
+                    label="Revenue Growth (%)"
+                    value={scenario.revenueGrowthRate}
+                    onChange={(v) => updateScenario(idx, 'revenueGrowthRate', v)}
+                    step={1}
+                  />
+                  <ScenarioPctInput
+                    label="EBITDA Margin (%)"
+                    value={scenario.ebitdaMargin}
+                    onChange={(v) => updateScenario(idx, 'ebitdaMargin', v)}
+                    step={1}
+                  />
                   <div>
                     <label className="text-xs text-gray-500">Exit Multiple</label>
-                    <input type="number" step="0.5" value={scenario.exitMultiple}
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={scenario.exitMultiple}
                       onChange={(e) => updateScenario(idx, 'exitMultiple', Number(e.target.value))}
-                      className="w-full border border-gray-200 rounded px-2 py-1 text-xs mt-0.5 focus:outline-none" />
+                      className="w-full border border-gray-200 rounded px-2 py-1 text-xs mt-0.5 focus:outline-none"
+                    />
                   </div>
-                  <div>
-                    <label className="text-xs text-gray-500">Probability</label>
-                    <input type="number" step="0.05" min="0" max="1" value={scenario.probability}
-                      onChange={(e) => updateScenario(idx, 'probability', Number(e.target.value))}
-                      className="w-full border border-gray-200 rounded px-2 py-1 text-xs mt-0.5 focus:outline-none" />
-                  </div>
+                  <ScenarioPctInput
+                    label="Probability (%)"
+                    value={scenario.probability}
+                    onChange={(v) => updateScenario(idx, 'probability', v)}
+                    step={5}
+                  />
                 </div>
               </div>
             ))}
           </div>
           {/* Probability sum validator */}
           <div className={`mt-2 text-xs font-medium ${probabilitySumOk ? 'text-gray-400' : 'text-red-600'}`}>
-            Probability sum: {probabilitySum.toFixed(2)}
-            {!probabilitySumOk && ' — must equal 1.00 (tolerance 0.05)'}
+            Probability sum: {(probabilitySum * 100).toFixed(0)}%
+            {!probabilitySumOk && ' — must equal 100% (tolerance 5%)'}
           </div>
         </div>
 

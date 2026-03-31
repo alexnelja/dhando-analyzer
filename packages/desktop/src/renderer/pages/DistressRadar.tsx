@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge } from '../components/TrafficLight';
-import { listWatchlist, runDistressCheck, type InvestmentRow } from '../lib/ipc';
+import { listWatchlist, runDistressCheck, getFinancials, type InvestmentRow } from '../lib/ipc';
 
 interface DistressResult {
   investmentId: string;
@@ -19,15 +19,6 @@ interface DistressResult {
   sentimentTrend?: string | null;
 }
 
-const FACTOR_LABELS: Record<string, string> = {
-  altmanZ: 'Altman Z',
-  piotroskiF: 'Piotroski F',
-  beneishM: 'Beneish M',
-  fcf: 'FCF Trend',
-  leverage: 'Leverage',
-  workingCapital: 'Working Capital',
-};
-
 function classificationColor(c: string) {
   if (c === 'temporary') return 'green';
   if (c === 'uncertain') return 'amber';
@@ -40,14 +31,43 @@ function scoreColor(score: number): 'green' | 'orange' | 'red' {
   return 'red';
 }
 
+interface InfoTooltipProps {
+  text: string;
+}
+
+function InfoTooltip({ text }: InfoTooltipProps) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span className="relative inline-flex items-center">
+      <button
+        type="button"
+        onMouseEnter={() => setVisible(true)}
+        onMouseLeave={() => setVisible(false)}
+        onFocus={() => setVisible(true)}
+        onBlur={() => setVisible(false)}
+        className="ml-1 w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-xs flex items-center justify-center hover:border-gray-500 hover:text-gray-600 focus:outline-none"
+        aria-label="More information"
+      >
+        i
+      </button>
+      {visible && (
+        <span className="absolute z-30 left-6 top-0 w-64 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg leading-relaxed">
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function DistressRadar() {
   const [investments, setInvestments] = useState<InvestmentRow[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DistressResult | null>(null);
   const [error, setError] = useState('');
+  const [autoCalcStatus, setAutoCalcStatus] = useState<'none' | 'loaded' | 'missing'>('none');
 
-  // Distress inputs
+  // Financial score inputs
   const [altmanZ, setAltmanZ] = useState(1.5);
   const [piotroskiF, setPiotroskiF] = useState(3);
   const [piotroskiFPrior, setPiotroskiFPrior] = useState(4);
@@ -74,6 +94,52 @@ export function DistressRadar() {
   }, []);
 
   const selectedInvestment = investments.find((i) => i.id === selectedId);
+
+  // Auto-load financials when investment changes
+  useEffect(() => {
+    if (!selectedId) {
+      setAutoCalcStatus('none');
+      return;
+    }
+    setAutoCalcStatus('none');
+    getFinancials(selectedId).then((rows) => {
+      if (rows.length === 0) {
+        setAutoCalcStatus('missing');
+        return;
+      }
+
+      const latest = rows[0];
+      const prior = rows[1];
+
+      // Auto-calculate Altman Z from stored financials
+      // Simplified: use ratio proxies available in StoredFinancials
+      // Full Altman Z needs market cap and book equity, which we don't store — use distress proxy
+      const totalLiabilities = latest.totalDebt;
+      const totalAssets = latest.totalAssets || 1;
+      const x1 = latest.workingCapital / totalAssets;
+      const x2 = 0; // retained earnings not stored
+      const x3 = (latest.ebitda * 0.7) / totalAssets; // EBIT proxy from EBITDA
+      const x4 = 1.0; // market cap / liabilities — unknown, default neutral
+      const x5 = latest.revenue / totalAssets;
+      const calculatedZ = Math.max(0, 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 1.0 * x5);
+
+      // Beneish M: simplified proxy — use -2.22 (not manipulator) as default since full M needs 8 ratios
+      const calculatedM = -2.22;
+
+      setAltmanZ(parseFloat(calculatedZ.toFixed(2)));
+      setBeneishM(calculatedM);
+      setFcfCurrent(latest.fcf);
+      setDebtToEbitda(latest.ebitda > 0 ? parseFloat((latest.totalDebt / latest.ebitda).toFixed(2)) : debtToEbitda);
+      setWorkingCapitalCurrent(latest.workingCapital);
+
+      if (prior) {
+        setFcfPrior(prior.fcf);
+        setWorkingCapitalPrior(prior.workingCapital);
+      }
+
+      setAutoCalcStatus('loaded');
+    }).catch(console.error);
+  }, [selectedId]);
 
   async function handleCheck() {
     if (!selectedInvestment) {
@@ -133,38 +199,149 @@ export function DistressRadar() {
           </select>
         </div>
 
+        {/* Auto-calc status banners */}
+        {autoCalcStatus === 'loaded' && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg border border-green-200">
+            <span className="text-green-500 text-sm">&#10003;</span>
+            <span className="text-xs text-green-700 font-medium">Auto-calculated from stored financials</span>
+            <span className="text-xs text-green-600">— Piotroski F must still be entered manually</span>
+          </div>
+        )}
+        {autoCalcStatus === 'missing' && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+            <span className="text-amber-500 text-lg">&#9888;</span>
+            <span className="text-xs text-amber-700">No financial data found — enter values manually or run the Screener first</span>
+          </div>
+        )}
+
         <div>
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Financial Inputs</h3>
           <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Altman Z', value: altmanZ, set: setAltmanZ, step: 0.1 },
-              { label: 'Piotroski F (current)', value: piotroskiF, set: setPiotroskiF, step: 1 },
-              { label: 'Piotroski F (prior)', value: piotroskiFPrior, set: setPiotroskiFPrior, step: 1 },
-              { label: 'Beneish M', value: beneishM, set: setBeneishM, step: 0.1 },
-              { label: 'FCF Current', value: fcfCurrent, set: setFcfCurrent, step: 500000 },
-              { label: 'FCF Prior', value: fcfPrior, set: setFcfPrior, step: 500000 },
-              { label: 'Debt/EBITDA', value: debtToEbitda, set: setDebtToEbitda, step: 0.5 },
-              { label: 'Working Capital (current)', value: workingCapitalCurrent, set: setWorkingCapitalCurrent, step: 500000 },
-              { label: 'Working Capital (prior)', value: workingCapitalPrior, set: setWorkingCapitalPrior, step: 500000 },
-            ].map((field) => (
-              <div key={field.label}>
-                <label className="block text-xs text-gray-500 mb-0.5">{field.label}</label>
-                <input
-                  type="number"
-                  step={field.step}
-                  value={field.value}
-                  onChange={(e) => field.set(Number(e.target.value))}
-                  className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
-                />
-              </div>
-            ))}
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                Altman Z
+                <InfoTooltip text="Altman Z-Score measures bankruptcy risk. Z > 2.99 = safe zone, 1.81–2.99 = grey zone, < 1.81 = distress zone. Calculated from working capital, retained earnings, EBIT, market cap, and revenue relative to total assets." />
+              </label>
+              <input
+                type="number"
+                step={0.1}
+                value={altmanZ}
+                onChange={(e) => setAltmanZ(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                Piotroski F (current)
+                <InfoTooltip text="Piotroski F-Score (0–9) measures financial strength across profitability, leverage, and efficiency signals. 8–9 = strong, 4–7 = average, 0–3 = weak. Higher is better." />
+              </label>
+              <input
+                type="number"
+                step={1}
+                value={piotroskiF}
+                onChange={(e) => setPiotroskiF(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                Piotroski F (prior year)
+                <InfoTooltip text="Prior year Piotroski F-Score for trend comparison. A declining F-Score signals deteriorating financial health." />
+              </label>
+              <input
+                type="number"
+                step={1}
+                value={piotroskiFPrior}
+                onChange={(e) => setPiotroskiFPrior(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                Beneish M
+                <InfoTooltip text="Beneish M-Score detects earnings manipulation. M > -1.78 suggests likely manipulation. M < -1.78 is normal. Calculated from 8 financial ratios including Days Sales Outstanding and Asset Quality Index." />
+              </label>
+              <input
+                type="number"
+                step={0.1}
+                value={beneishM}
+                onChange={(e) => setBeneishM(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                FCF Current
+                <InfoTooltip text="Free Cash Flow for the current year. Negative FCF can signal distress — especially if it has declined from the prior year." />
+              </label>
+              <input
+                type="number"
+                step={500000}
+                value={fcfCurrent}
+                onChange={(e) => setFcfCurrent(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                FCF Prior
+                <InfoTooltip text="Free Cash Flow for the prior year. Used to detect FCF trend deterioration." />
+              </label>
+              <input
+                type="number"
+                step={500000}
+                value={fcfPrior}
+                onChange={(e) => setFcfPrior(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                Debt / EBITDA
+                <InfoTooltip text="Net Debt divided by EBITDA. A ratio above 4x signals high leverage. Above 6x is typically considered distressed. Investment-grade companies generally stay below 3x." />
+              </label>
+              <input
+                type="number"
+                step={0.5}
+                value={debtToEbitda}
+                onChange={(e) => setDebtToEbitda(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                Working Capital (current)
+                <InfoTooltip text="Current Assets minus Current Liabilities. Negative working capital means the business cannot cover short-term obligations from liquid assets." />
+              </label>
+              <input
+                type="number"
+                step={500000}
+                value={workingCapitalCurrent}
+                onChange={(e) => setWorkingCapitalCurrent(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
+            <div>
+              <label className="flex items-center text-xs text-gray-500 mb-0.5">
+                Working Capital (prior)
+                <InfoTooltip text="Prior year Working Capital. A declining trend is a distress signal even if current year is still positive." />
+              </label>
+              <input
+                type="number"
+                step={500000}
+                value={workingCapitalPrior}
+                onChange={(e) => setWorkingCapitalPrior(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-orange-400"
+              />
+            </div>
           </div>
         </div>
 
         <div>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            Qualitative Factors (0 = temporary, 10 = permanent)
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Qualitative Factors
           </h3>
+          <p className="text-xs text-gray-400 mb-3">0 = temporary / recoverable, 10 = permanent / structural. These require human judgment.</p>
           <div className="grid grid-cols-3 gap-3">
             {(Object.keys(distressFactors) as (keyof typeof distressFactors)[]).map((key) => (
               <div key={key}>

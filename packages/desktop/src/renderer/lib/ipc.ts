@@ -27,6 +27,7 @@ export interface WatchlistEntry {
   exchange?: string | null;
   sector?: string | null;
   industry?: string | null;
+  notes?: string | null;
 }
 
 export interface InvestmentRow {
@@ -37,6 +38,7 @@ export interface InvestmentRow {
   exchange: string | null;
   sector: string | null;
   industry: string | null;
+  notes: string | null;
   status: InvestmentStatus;
   pe_deal_stage: string | null;
   data_source: string;
@@ -109,10 +111,28 @@ function saveToStorage(key: string, data: unknown): void {
   try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
 }
 
+// ── Central Financial Data Store ──────────────────────────────────────────────
+
+export interface StoredFinancials {
+  investmentId: string;
+  year: number;
+  revenue: number;
+  netIncome: number;
+  ebitda: number;
+  totalAssets: number;
+  totalDebt: number;
+  cash: number;
+  capex: number;
+  fcf: number;
+  workingCapital: number;
+  updatedAt: string;
+}
+
 // ── In-memory store for browser mode (persisted to localStorage) ──────────────
 let browserWatchlist: InvestmentRow[] = loadFromStorage('dhando_watchlist', []);
 let browserRules: (Rule & { id: string })[] = loadFromStorage('dhando_rules', []);
 let browserPositions: PortfolioPositionRow[] = loadFromStorage('dhando_positions', []);
+let browserFinancials: StoredFinancials[] = loadFromStorage('dhando_financials', []);
 let browserIdCounter = 1;
 
 function generateId(): string {
@@ -147,6 +167,7 @@ export async function addWatchlistEntry(data: WatchlistEntry): Promise<string> {
     exchange: data.exchange ?? null,
     sector: data.sector ?? null,
     industry: data.industry ?? null,
+    notes: data.notes ?? null,
     status: 'screening',
     pe_deal_stage: null,
     data_source: 'manual',
@@ -556,6 +577,34 @@ export async function runDealAnalysis(input: any): Promise<any> {
       ],
     },
   };
+}
+
+// ── Central Financial Data Store (CRUD) ──────────────────────────────────────
+
+export async function saveFinancials(data: StoredFinancials): Promise<void> {
+  if (isElectron) {
+    // IPC call placeholder — not yet wired in main process
+    return;
+  }
+  const existing = browserFinancials.findIndex(
+    (f) => f.investmentId === data.investmentId && f.year === data.year,
+  );
+  if (existing >= 0) {
+    browserFinancials[existing] = data;
+  } else {
+    browserFinancials.push(data);
+  }
+  saveToStorage('dhando_financials', browserFinancials);
+}
+
+export async function getFinancials(investmentId: string): Promise<StoredFinancials[]> {
+  if (isElectron) {
+    // IPC call placeholder — not yet wired in main process
+    return [];
+  }
+  return browserFinancials
+    .filter((f) => f.investmentId === investmentId)
+    .sort((a, b) => b.year - a.year);
 }
 
 // ── Magic Formula ─────────────────────────────────────────────────────────────
