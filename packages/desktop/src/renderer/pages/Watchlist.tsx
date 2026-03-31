@@ -198,6 +198,7 @@ export function Watchlist() {
       setLivePrice(null);
       await reload();
     } catch (err) {
+      console.error('[Watchlist] addWatchlistEntry failed:', err);
       setError(String(err));
     } finally {
       setSaving(false);
@@ -209,7 +210,7 @@ export function Watchlist() {
       await advanceEntry(id);
       await reload();
     } catch (err) {
-      console.error(err);
+      console.error('[Watchlist] advanceEntry failed:', err);
     }
   }
 
@@ -219,7 +220,7 @@ export function Watchlist() {
       await removeEntry(id);
       await reload();
     } catch (err) {
-      console.error(err);
+      console.error('[Watchlist] removeEntry failed:', err);
     }
   }
 

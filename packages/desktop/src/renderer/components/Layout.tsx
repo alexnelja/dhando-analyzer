@@ -13,7 +13,9 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/screener', label: 'Screener', icon: '⊞' },
   { path: '/deal-analyzer', label: 'Deal Analyzer', icon: '◈' },
   { path: '/portfolio', label: 'Portfolio', icon: '◎' },
+  { path: '/compare', label: 'Compare', icon: '⚖' },
   { path: '/distress', label: 'Distress Radar', icon: '⚠' },
+  { path: '/magic-formula', label: 'Magic Formula', icon: '✦' },
   { path: '/private-markets', label: 'Private Markets', icon: '◇' },
   { path: '/rules', label: 'Rules', icon: '≡' },
 ];

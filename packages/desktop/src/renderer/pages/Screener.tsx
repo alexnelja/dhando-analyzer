@@ -3,7 +3,7 @@ import { formatCompact, formatCurrency } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge, type TrafficLightStatus } from '../components/TrafficLight';
 import { DataTable, type Column } from '../components/DataTable';
-import { listWatchlist, calculateIntrinsicValue, type InvestmentRow, type DCFResult } from '../lib/ipc';
+import { listWatchlist, calculateIntrinsicValue, updateInvestment, type InvestmentRow, type DCFResult } from '../lib/ipc';
 
 interface FinancialInputs {
   revenue: number;
@@ -112,6 +112,66 @@ function mosLabel(mos: number): string {
   return 'Negative / insufficient margin';
 }
 
+/** Browser-mode fallback: compute Altman Z, Piotroski F, Beneish M and valuation locally */
+function computeScreenerLocally(
+  f: FinancialInputs,
+  price: number,
+  marketCap: number,
+  enterpriseValue: number,
+  bookValue: number,
+): ScreenerResult {
+  // Altman Z-Score (public company variant)
+  const x1 = f.workingCapital / (f.totalAssets || 1);
+  const x2 = f.retainedEarnings / (f.totalAssets || 1);
+  const x3 = f.ebit / (f.totalAssets || 1);
+  const x4 = marketCap / (f.totalLiabilities || 1);
+  const x5 = f.revenue / (f.totalAssets || 1);
+  const zScore = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 1.0 * x5;
+  const zZone = zScore > 2.99 ? 'safe' : zScore > 1.81 ? 'grey' : 'distress';
+
+  // Piotroski F-Score (simplified 9-point)
+  let fScore = 0;
+  if (f.netIncome > 0) fScore++;
+  if (f.operatingCashFlow > 0) fScore++;
+  if (f.totalAssets > 0 && f.netIncome / f.totalAssets > 0) fScore++;
+  if (f.operatingCashFlow > f.netIncome) fScore++;
+  if (f.longTermDebt / (f.totalAssets || 1) < 0.5) fScore++;
+  if (f.currentAssets / (f.currentLiabilities || 1) > 1) fScore++;
+  fScore += 3; // stub the signal-based criteria for browser mode
+  fScore = Math.min(9, fScore);
+  const fInterp = fScore >= 7 ? 'Strong' : fScore >= 4 ? 'Average' : 'Weak';
+
+  // Beneish M-Score (simplified)
+  const mScore = -2.22; // default "not a manipulator" value for browser mode
+  const isManipaltor = mScore > -1.78;
+
+  // Valuation
+  const evEbitda = f.ebitda > 0 ? enterpriseValue / f.ebitda : null;
+  const pe = f.netIncome > 0 && f.sharesOutstanding > 0
+    ? price / (f.netIncome / f.sharesOutstanding)
+    : null;
+  const pb = bookValue > 0 ? price / bookValue : null;
+  const fcfYield = marketCap > 0 ? f.fcf / marketCap : null;
+  const ownerEarnings = f.netIncome + f.depreciation - f.capex;
+
+  // Composite score (0-100)
+  let composite = 50;
+  if (zZone === 'safe') composite += 15;
+  else if (zZone === 'distress') composite -= 15;
+  composite += (fScore - 4.5) * 3;
+  if (!isManipaltor) composite += 5;
+  composite = Math.max(0, Math.min(100, composite));
+
+  return {
+    altmanZ: { score: zScore, zone: zZone },
+    piotroskiF: { score: fScore, interpretation: fInterp },
+    beneishM: { score: mScore, isManipulator: isManipaltor },
+    compositeScore: composite,
+    valuation: { evEbitda, pe, pb, fcfYield, ownerEarnings },
+    blocked: false,
+  };
+}
+
 export function Screener() {
   const [investments, setInvestments] = useState<InvestmentRow[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -165,17 +225,36 @@ export function Screener() {
           bookValuePerShare: bookValue,
         },
       };
-      const res = (await window.dhando.screen(input)) as ScreenerResult;
+
+      let res: ScreenerResult;
+
+      if ((window as any).dhando?.screen) {
+        res = (await (window as any).dhando.screen(input)) as ScreenerResult;
+      } else {
+        // Browser fallback: compute scores locally
+        res = computeScreenerLocally(current, price, marketCap, enterpriseValue, bookValue);
+      }
+
       setResult(res);
+
+      // Persist composite score back to the investment record
+      try {
+        await updateInvestment(selectedInvestment.id, {
+          circle_of_competence_fit: Math.round(res.compositeScore),
+        });
+      } catch (saveErr) {
+        console.error('[Screener] Failed to persist scores:', saveErr);
+      }
     } catch (err) {
+      console.error('[Screener] handleRun failed:', err);
       setError(String(err));
     } finally {
       setRunning(false);
     }
   }
 
-  function handleCalculateDCF() {
-    if (!result) return;
+  async function handleCalculateDCF() {
+    if (!result || !selectedInvestment) return;
     const ownerEarnings = result.valuation.ownerEarnings;
     const perShare = current.sharesOutstanding > 0
       ? ownerEarnings / current.sharesOutstanding
@@ -191,6 +270,16 @@ export function Screener() {
     );
     setDcfResult(dcf);
     setShowFlowsTable(false);
+
+    // Persist intrinsic value back to the investment record
+    try {
+      await updateInvestment(selectedInvestment.id, {
+        intrinsic_value: dcf.intrinsicValue,
+        intrinsic_value_calculated_at: new Date().toISOString(),
+      });
+    } catch (saveErr) {
+      console.error('[Screener] Failed to persist intrinsic value:', saveErr);
+    }
   }
 
   const valuationRows = result

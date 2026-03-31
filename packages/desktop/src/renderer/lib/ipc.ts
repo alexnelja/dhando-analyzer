@@ -343,3 +343,73 @@ export async function getStockPrice(ticker: string, exchange: string): Promise<n
     return null;
   }
 }
+
+// ── Investment Updates ────────────────────────────────────────────────────────
+
+export async function updateInvestment(id: string, updates: Partial<InvestmentRow>): Promise<void> {
+  if (isElectron) {
+    await (window as any).dhando.watchlist.update(id, updates);
+    return;
+  }
+  // Browser fallback
+  const inv = browserWatchlist.find((r) => r.id === id);
+  if (inv) {
+    Object.assign(inv, updates, { updated_at: new Date().toISOString() });
+  }
+}
+
+// ── Magic Formula ─────────────────────────────────────────────────────────────
+
+export interface MagicFormulaEntry {
+  investmentId: string;
+  name: string;
+  ticker: string | null;
+  earningsYield: number;
+  returnOnCapital: number;
+  eyRank: number;
+  rocRank: number;
+  combinedRank: number;
+}
+
+export function calculateMagicFormula(
+  investments: {
+    id: string;
+    name: string;
+    ticker: string | null;
+    ebit: number;
+    enterpriseValue: number;
+    netWorkingCapital: number;
+    netFixedAssets: number;
+  }[],
+): MagicFormulaEntry[] {
+  // Filter out invalid entries
+  const valid = investments.filter(
+    (i) => i.enterpriseValue > 0 && i.netWorkingCapital + i.netFixedAssets > 0,
+  );
+
+  // Calculate ratios
+  const entries: MagicFormulaEntry[] = valid.map((i) => ({
+    investmentId: i.id,
+    name: i.name,
+    ticker: i.ticker,
+    earningsYield: i.ebit / i.enterpriseValue,
+    returnOnCapital: i.ebit / (i.netWorkingCapital + i.netFixedAssets),
+    eyRank: 0,
+    rocRank: 0,
+    combinedRank: 0,
+  }));
+
+  // Rank by earnings yield (descending — highest yield gets rank 1)
+  const byEY = [...entries].sort((a, b) => b.earningsYield - a.earningsYield);
+  byEY.forEach((e, i) => { e.eyRank = i + 1; });
+
+  // Rank by return on capital (descending — highest ROC gets rank 1)
+  const byROC = [...entries].sort((a, b) => b.returnOnCapital - a.returnOnCapital);
+  byROC.forEach((e, i) => { e.rocRank = i + 1; });
+
+  // Combined rank
+  entries.forEach((e) => { e.combinedRank = e.eyRank + e.rocRank; });
+
+  // Sort by combined rank ascending (best first)
+  return entries.sort((a, b) => a.combinedRank - b.combinedRank);
+}

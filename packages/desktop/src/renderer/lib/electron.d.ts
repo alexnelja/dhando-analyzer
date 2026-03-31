@@ -10,6 +10,7 @@ interface DhandoApi {
     add: (data: unknown) => Promise<string>;
     advance: (id: string) => Promise<{ ok: boolean }>;
     remove: (id: string) => Promise<{ ok: boolean }>;
+    update: (id: string, updates: unknown) => Promise<{ ok: boolean }>;
   };
 
   screen: (...args: unknown[]) => Promise<unknown>;
