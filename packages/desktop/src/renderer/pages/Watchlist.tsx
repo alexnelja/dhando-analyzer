@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { DataTable, type Column } from '../components/DataTable';
 import { StatusBadge } from '../components/StatusBadge';
 import {
@@ -6,10 +6,14 @@ import {
   addWatchlistEntry,
   advanceEntry,
   removeEntry,
+  searchStocks,
+  getStockProfile,
+  getStockPrice,
   type InvestmentRow,
   type InvestmentStatus,
   type InvestmentType,
   type WatchlistEntry,
+  type StockSearchResult,
 } from '../lib/ipc';
 
 const INVESTMENT_TYPES: { value: InvestmentType; label: string }[] = [
@@ -49,6 +53,16 @@ export function Watchlist() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Stock search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
@@ -64,6 +78,77 @@ export function Watchlist() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Debounced stock search
+  function handleSearchInput(value: string) {
+    setSearchQuery(value);
+    setForm((f) => ({ ...f, name: value }));
+    setLivePrice(null);
+
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
+    if (value.length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    setSearching(true);
+    searchTimeout.current = setTimeout(async () => {
+      const results = await searchStocks(value);
+      setSearchResults(results);
+      setShowDropdown(results.length > 0);
+      setSearching(false);
+    }, 300);
+  }
+
+  // Select a stock from search results
+  async function handleSelectStock(stock: StockSearchResult) {
+    setForm((f) => ({
+      ...f,
+      name: stock.Name,
+      ticker: stock.Code,
+      exchange: stock.Exchange,
+      type: 'listed_stock',
+    }));
+    setSearchQuery(stock.Name);
+    setShowDropdown(false);
+    setSearchResults([]);
+
+    // Fetch sector/industry and live price
+    setLoadingProfile(true);
+    setLivePrice(null);
+
+    const [profile, price] = await Promise.all([
+      getStockProfile(stock.Code, stock.Exchange),
+      getStockPrice(stock.Code, stock.Exchange),
+    ]);
+
+    if (profile) {
+      setForm((f) => ({
+        ...f,
+        sector: profile.sector || f.sector,
+        industry: profile.industry || f.industry,
+      }));
+    }
+
+    if (price !== null) {
+      setLivePrice(price);
+    }
+
+    setLoadingProfile(false);
+  }
 
   async function handleAdd() {
     if (!form.name.trim()) {
@@ -82,6 +167,8 @@ export function Watchlist() {
       });
       setShowModal(false);
       setForm({ ...EMPTY_FORM });
+      setSearchQuery('');
+      setLivePrice(null);
       await reload();
     } catch (err) {
       setError(String(err));
@@ -109,6 +196,16 @@ export function Watchlist() {
     }
   }
 
+  function openModal() {
+    setForm({ ...EMPTY_FORM });
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowDropdown(false);
+    setLivePrice(null);
+    setError('');
+    setShowModal(true);
+  }
+
   const columns: Column<InvestmentRow>[] = [
     {
       key: 'name',
@@ -121,7 +218,7 @@ export function Watchlist() {
       key: 'ticker',
       header: 'Ticker',
       render: (row) => (
-        <span className="font-mono text-sm text-gray-600">{row.ticker ?? '—'}</span>
+        <span className="font-mono text-sm text-gray-600">{row.ticker ?? '\u2014'}</span>
       ),
     },
     {
@@ -140,7 +237,7 @@ export function Watchlist() {
       key: 'sector',
       header: 'Sector',
       render: (row) => (
-        <span className="text-xs text-gray-500">{row.sector ?? '—'}</span>
+        <span className="text-xs text-gray-500">{row.sector ?? '\u2014'}</span>
       ),
     },
     {
@@ -177,7 +274,7 @@ export function Watchlist() {
           <p className="text-gray-500 mt-1 text-sm">Investment pipeline — track from screening to purchase</p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={openModal}
           className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90"
           style={{ backgroundColor: '#d97757' }}
         >
@@ -197,11 +294,7 @@ export function Watchlist() {
                 ? 'text-white'
                 : 'text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200'
             }`}
-            style={
-              statusFilter === opt.value
-                ? { backgroundColor: '#d97757' }
-                : {}
-            }
+            style={statusFilter === opt.value ? { backgroundColor: '#d97757' } : {}}
           >
             {opt.label}
           </button>
@@ -212,9 +305,7 @@ export function Watchlist() {
         <div className="text-gray-400 text-sm">Loading...</div>
       ) : (
         <DataTable
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           columns={columns as any}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           rows={rows as any}
           keyField="id"
           emptyMessage="No investments in watchlist. Add your first entry above."
@@ -224,27 +315,76 @@ export function Watchlist() {
       {/* Add Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/30"
-            onClick={() => setShowModal(false)}
-          />
+          <div className="absolute inset-0 bg-black/30" onClick={() => setShowModal(false)} />
           <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4">
             <h2 className="text-lg font-semibold text-gray-900 mb-5">Add Investment</h2>
 
             <div className="space-y-4">
-              <div>
+              {/* Search input with autocomplete */}
+              <div ref={dropdownRef} className="relative">
                 <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Name <span className="text-red-500">*</span>
+                  Search Stock <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Berkshire Hathaway"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => handleSearchInput(e.target.value)}
+                    placeholder="Type company name or ticker (e.g. Capitec, BRK.B)"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                    autoFocus
+                  />
+                  {searching && (
+                    <div className="absolute right-3 top-2.5">
+                      <div className="w-4 h-4 border-2 border-orange-300 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Search results dropdown */}
+                {showDropdown && searchResults.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-200 max-h-64 overflow-y-auto">
+                    {searchResults.map((stock, i) => (
+                      <button
+                        key={`${stock.Code}-${stock.Exchange}-${i}`}
+                        onClick={() => handleSelectStock(stock)}
+                        className="w-full text-left px-3 py-2.5 hover:bg-orange-50 transition-colors border-b border-gray-50 last:border-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-medium text-gray-900 text-sm">{stock.Name}</span>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="font-mono text-xs text-orange-600 font-semibold">{stock.Code}</span>
+                              <span className="text-xs text-gray-400">{stock.Exchange}</span>
+                              <span className="text-xs text-gray-400">{stock.Country}</span>
+                            </div>
+                          </div>
+                          <span className="text-xs text-gray-400 capitalize">{stock.Type}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {/* Live price badge */}
+              {livePrice !== null && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg border border-green-200">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-sm font-medium text-green-700">
+                    Live Price: {livePrice.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+
+              {loadingProfile && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs text-blue-600">Fetching stock details...</span>
+                </div>
+              )}
+
+              {/* Auto-filled fields */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Ticker</label>
@@ -252,8 +392,8 @@ export function Watchlist() {
                     type="text"
                     value={form.ticker ?? ''}
                     onChange={(e) => setForm((f) => ({ ...f, ticker: e.target.value }))}
-                    placeholder="e.g. BRK.B"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                    placeholder="Auto-filled"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 bg-gray-50"
                   />
                 </div>
                 <div>
@@ -262,8 +402,8 @@ export function Watchlist() {
                     type="text"
                     value={form.exchange ?? ''}
                     onChange={(e) => setForm((f) => ({ ...f, exchange: e.target.value }))}
-                    placeholder="e.g. NYSE"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                    placeholder="Auto-filled"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 bg-gray-50"
                   />
                 </div>
               </div>
@@ -276,9 +416,7 @@ export function Watchlist() {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
                 >
                   {INVESTMENT_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
+                    <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
               </div>
@@ -290,8 +428,8 @@ export function Watchlist() {
                     type="text"
                     value={form.sector ?? ''}
                     onChange={(e) => setForm((f) => ({ ...f, sector: e.target.value }))}
-                    placeholder="e.g. Financials"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                    placeholder="Auto-filled"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 bg-gray-50"
                   />
                 </div>
                 <div>
@@ -300,8 +438,8 @@ export function Watchlist() {
                     type="text"
                     value={form.industry ?? ''}
                     onChange={(e) => setForm((f) => ({ ...f, industry: e.target.value }))}
-                    placeholder="e.g. Insurance"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                    placeholder="Auto-filled"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 bg-gray-50"
                   />
                 </div>
               </div>
@@ -318,7 +456,7 @@ export function Watchlist() {
               </button>
               <button
                 onClick={handleAdd}
-                disabled={saving}
+                disabled={saving || !form.name.trim()}
                 className="px-4 py-2 text-sm text-white rounded-lg hover:opacity-90 disabled:opacity-50"
                 style={{ backgroundColor: '#d97757' }}
               >
