@@ -10,3 +10,4 @@ export * from './api/finbert.js';
 export * from './rules-engine/index.js';
 export * from './scoring/index.js';
 export * from './screener/index.js';
+export * from './deal-analyzer/index.js';
