@@ -2,12 +2,12 @@
   "name": "@dhando/desktop",
   "version": "0.1.0",
   "private": true,
-  "main": "./dist/main/index.cjs",
+  "main": "dist/main/index.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "build": "vite build && tsc -p tsconfig.main.json",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --outfile=dist/main/index.js --external:electron --external:better-sqlite3 && esbuild src/main/preload.ts --bundle --platform=node --outfile=dist/main/preload.js --external:electron",
+    "dev": "npm run build:main && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build:renderer": "vite build",
-    "build:main": "tsc -p tsconfig.main.json",
+    "build": "npm run build:main && npm run build:renderer",
     "electron": "electron .",
     "clean": "rm -rf dist"
   },
@@ -18,12 +18,13 @@
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
     "concurrently": "^9.0.0",
     "electron": "^34.0.0",
+    "esbuild": "^0.24.2",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.7.0",
