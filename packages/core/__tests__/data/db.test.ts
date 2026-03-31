@@ -13,7 +13,7 @@ describe('Database connection', () => {
     expect(db).toBeDefined();
   });
 
-  it('creates all 15 tables on initialisation', () => {
+  it('creates all 16 tables on initialisation', () => {
     db = createDatabase(':memory:');
     const tables = db.all<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -29,6 +29,7 @@ describe('Database connection', () => {
       'financials',
       'geopolitical_events',
       'investments',
+      'portfolio_positions',
       'rule_audit_log',
       'rules',
       'scenarios',

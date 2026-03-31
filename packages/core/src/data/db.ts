@@ -253,4 +253,14 @@ CREATE TABLE IF NOT EXISTS decision_snapshots (
   kelly_position    REAL,
   scenario_json     TEXT
 );
+
+CREATE TABLE IF NOT EXISTS portfolio_positions (
+  id            TEXT PRIMARY KEY,
+  investment_id TEXT NOT NULL REFERENCES investments(id),
+  cost_basis    REAL NOT NULL,
+  shares        REAL NOT NULL,
+  entered_at    TEXT NOT NULL,
+  exited_at     TEXT,
+  exit_price    REAL
+);
 `;
