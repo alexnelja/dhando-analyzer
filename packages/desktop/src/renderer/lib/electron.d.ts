@@ -26,6 +26,7 @@ interface DhandoApi {
   rules: {
     list: () => Promise<unknown[]>;
     load: (dir: string) => Promise<{ loaded: number; ids: string[] }>;
+    create: (rule: unknown) => Promise<string>;
   };
 
   distress: {

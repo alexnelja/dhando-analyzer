@@ -10,6 +10,7 @@ import {
   searchStocks,
   getStockProfile,
   getStockPrice,
+  addPosition,
   type InvestmentRow,
   type InvestmentStatus,
   type InvestmentType,
@@ -45,6 +46,28 @@ const EMPTY_FORM: Omit<WatchlistEntry, 'id'> = {
   industry: '',
 };
 
+interface PortfolioModalState {
+  open: boolean;
+  investmentId: string;
+  investmentName: string;
+  entryPrice: string;
+  shares: string;
+  saving: boolean;
+  error: string;
+  success: boolean;
+}
+
+const EMPTY_PORTFOLIO_MODAL: PortfolioModalState = {
+  open: false,
+  investmentId: '',
+  investmentName: '',
+  entryPrice: '',
+  shares: '',
+  saving: false,
+  error: '',
+  success: false,
+};
+
 export function Watchlist() {
   const [rows, setRows] = useState<InvestmentRow[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
@@ -63,6 +86,9 @@ export function Watchlist() {
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Portfolio modal state
+  const [portfolioModal, setPortfolioModal] = useState<PortfolioModalState>({ ...EMPTY_PORTFOLIO_MODAL });
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -207,6 +233,48 @@ export function Watchlist() {
     setShowModal(true);
   }
 
+  // Open "Add to Portfolio" modal for a row
+  async function openPortfolioModal(row: InvestmentRow) {
+    const livePriceForRow = row.ticker && row.exchange
+      ? await getStockPrice(row.ticker, row.exchange).catch(() => null)
+      : null;
+
+    setPortfolioModal({
+      open: true,
+      investmentId: row.id,
+      investmentName: row.name,
+      entryPrice: livePriceForRow !== null ? String(livePriceForRow) : '',
+      shares: '',
+      saving: false,
+      error: '',
+      success: false,
+    });
+  }
+
+  async function handleConfirmPortfolioAdd() {
+    const { investmentId, entryPrice, shares } = portfolioModal;
+    const cost = parseFloat(entryPrice);
+    const qty = parseFloat(shares);
+
+    if (!cost || cost <= 0) {
+      setPortfolioModal((m) => ({ ...m, error: 'Entry price must be a positive number' }));
+      return;
+    }
+    if (!qty || qty <= 0) {
+      setPortfolioModal((m) => ({ ...m, error: 'Number of shares must be a positive number' }));
+      return;
+    }
+
+    setPortfolioModal((m) => ({ ...m, saving: true, error: '' }));
+    try {
+      await addPosition(investmentId, cost, qty);
+      setPortfolioModal((m) => ({ ...m, saving: false, success: true }));
+      setTimeout(() => setPortfolioModal({ ...EMPTY_PORTFOLIO_MODAL }), 1500);
+    } catch (err) {
+      setPortfolioModal((m) => ({ ...m, saving: false, error: String(err) }));
+    }
+  }
+
   const columns: Column<InvestmentRow>[] = [
     {
       key: 'name',
@@ -247,6 +315,15 @@ export function Watchlist() {
       align: 'right',
       render: (row) => (
         <div className="flex items-center gap-2 justify-end">
+          {(row.status === 'ready_to_buy' || row.status === 'held') && (
+            <button
+              onClick={() => openPortfolioModal(row)}
+              className="px-2 py-1 rounded text-xs font-medium transition-colors hover:bg-green-50"
+              style={{ color: '#788c5d', border: '1px solid rgba(120,140,93,0.3)' }}
+            >
+              + Portfolio
+            </button>
+          )}
           <button
             onClick={() => handleAdvance(row.id)}
             className="px-2 py-1 rounded text-xs font-medium transition-colors hover:bg-orange-50"
@@ -306,14 +383,16 @@ export function Watchlist() {
         <div className="text-gray-400 text-sm">Loading...</div>
       ) : (
         <DataTable
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           columns={columns as any}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           rows={rows as any}
           keyField="id"
           emptyMessage="No investments in watchlist. Add your first entry above."
         />
       )}
 
-      {/* Add Modal */}
+      {/* Add Investment Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/30" onClick={() => setShowModal(false)} />
@@ -464,6 +543,95 @@ export function Watchlist() {
                 {saving ? 'Adding...' : 'Add'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add to Portfolio Modal */}
+      {portfolioModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setPortfolioModal({ ...EMPTY_PORTFOLIO_MODAL })}
+          />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 mx-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Add to Portfolio</h2>
+            <p className="text-sm text-gray-500 mb-5">{portfolioModal.investmentName}</p>
+
+            {portfolioModal.success ? (
+              <div className="py-4 text-center">
+                <p className="text-sm font-medium" style={{ color: '#788c5d' }}>Position added successfully.</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-4 mb-5">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Entry Price (ZAR per share) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={portfolioModal.entryPrice}
+                      onChange={(e) => setPortfolioModal((m) => ({ ...m, entryPrice: e.target.value }))}
+                      placeholder="e.g. 185.50"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Number of Shares <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={portfolioModal.shares}
+                      onChange={(e) => setPortfolioModal((m) => ({ ...m, shares: e.target.value }))}
+                      placeholder="e.g. 100"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                    />
+                  </div>
+
+                  {/* Summary preview */}
+                  {portfolioModal.entryPrice && portfolioModal.shares &&
+                    !isNaN(parseFloat(portfolioModal.entryPrice)) &&
+                    !isNaN(parseFloat(portfolioModal.shares)) && (
+                    <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Total cost</span>
+                        <span className="font-medium">
+                          {formatCurrency(parseFloat(portfolioModal.entryPrice) * parseFloat(portfolioModal.shares))}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {portfolioModal.error && (
+                  <p className="text-red-500 text-xs mb-3">{portfolioModal.error}</p>
+                )}
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setPortfolioModal({ ...EMPTY_PORTFOLIO_MODAL })}
+                    className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:border-gray-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmPortfolioAdd}
+                    disabled={portfolioModal.saving}
+                    className="px-4 py-2 text-sm text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+                    style={{ backgroundColor: '#788c5d' }}
+                  >
+                    {portfolioModal.saving ? 'Adding...' : 'Confirm'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

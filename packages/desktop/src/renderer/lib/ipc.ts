@@ -98,6 +98,8 @@ const isElectron = typeof window !== 'undefined' && !!(window as any).dhando;
 
 // ── In-memory store for browser mode ─────────────────────────────────────────
 let browserWatchlist: InvestmentRow[] = [];
+let browserRules: (Rule & { id: string })[] = [];
+let browserPositions: PortfolioPositionRow[] = [];
 let browserIdCounter = 1;
 
 function generateId(): string {
@@ -199,6 +201,102 @@ export async function loadRulesFromDir(dir: string): Promise<{ loaded: number; i
     return window.dhando.rules.load(dir) as Promise<{ loaded: number; ids: string[] }>;
   }
   return { loaded: 0, ids: [] };
+}
+
+/** Shape expected by the core createRule / RuleDocument (snake_case field names). */
+export interface RuleDocumentInput {
+  name: string;
+  category: string;
+  type: string;
+  source_type: string;
+  source_detail: string;
+  description: string;
+  weight?: number;
+  conditions: {
+    metric: string;
+    operator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'neq' | 'between';
+    value: number | [number, number];
+    weight: number;
+  }[];
+}
+
+export async function createRuleEntry(rule: RuleDocumentInput): Promise<string> {
+  if (isElectron) {
+    return window.dhando.rules.create(rule) as Promise<string>;
+  }
+  // Browser fallback — map snake_case fields back to Rule camelCase for in-memory store
+  const id = generateId();
+  const now = new Date().toISOString();
+  browserRules.push({
+    id,
+    name: rule.name,
+    category: rule.category,
+    type: rule.type,
+    sourceType: rule.source_type,
+    sourceDetail: rule.source_detail,
+    description: rule.description,
+    conditions: rule.conditions,
+    weight: rule.weight ?? 1.0,
+    version: 1,
+    active: true,
+    activeFrom: now as unknown as string,
+    activeTo: null,
+    createdAt: now as unknown as string,
+    timesFired: 0,
+    timesCorrect: 0,
+    believabilityScore: 0.5,
+  } as unknown as Rule & { id: string });
+  return id;
+}
+
+export async function addPosition(investmentId: string, costBasis: number, shares: number): Promise<string> {
+  if (isElectron) {
+    return window.dhando.portfolio.upsert({ investmentId, costBasis, shares }) as Promise<string>;
+  }
+  // Browser fallback
+  browserPositions.push({
+    id: generateId(),
+    investmentId,
+    costBasis,
+    shares,
+    enteredAt: new Date().toISOString(),
+    exitedAt: null,
+    exitPrice: null,
+  });
+  return 'ok';
+}
+
+export interface DCFResult {
+  intrinsicValue: number;
+  explicitPV: number;
+  terminalPV: number;
+  marginOfSafety: number;
+  flows: { year: number; cf: number; pv: number }[];
+}
+
+export function calculateIntrinsicValue(
+  ownerEarnings: number,
+  growthRate: number,
+  terminalGrowth: number,
+  discountRate: number,
+  years: number,
+  currentPrice: number,
+): DCFResult {
+  let explicitPV = 0;
+  const flows: { year: number; cf: number; pv: number }[] = [];
+  for (let y = 1; y <= years; y++) {
+    const cf = ownerEarnings * Math.pow(1 + growthRate, y);
+    const pv = cf / Math.pow(1 + discountRate, y);
+    explicitPV += pv;
+    flows.push({ year: y, cf, pv });
+  }
+  const finalCF = ownerEarnings * Math.pow(1 + growthRate, years) * (1 + terminalGrowth);
+  const terminalValue = finalCF / (discountRate - terminalGrowth);
+  const terminalPV = terminalValue / Math.pow(1 + discountRate, years);
+  const intrinsicValue = explicitPV + terminalPV;
+  const marginOfSafety = currentPrice > 0 ? (intrinsicValue - currentPrice) / intrinsicValue : 0;
+
+  return { intrinsicValue, explicitPV, terminalPV, marginOfSafety, flows };
 }
 
 // ── Stock Search (EODHD) ─────────────────────────────────────────────────────

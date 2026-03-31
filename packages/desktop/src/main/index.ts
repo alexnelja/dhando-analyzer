@@ -163,6 +163,10 @@ function registerIpcHandlers() {
     return { loaded: ids.length, ids };
   });
 
+  ipcMain.handle('dhando:rules:create', (_event, ruleDoc: Parameters<typeof createRule>[1]) => {
+    return createRule(getDb(), ruleDoc);
+  });
+
   // ── Distress ──────────────────────────────────────────────────────────────
   ipcMain.handle('dhando:distress:check', (_event, input: Parameters<typeof runDistressRadar>[0]) => {
     return runDistressRadar(input, getDb());

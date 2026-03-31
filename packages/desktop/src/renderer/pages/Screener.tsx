@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { formatCompact } from '../lib/currency';
+import { formatCompact, formatCurrency } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge, type TrafficLightStatus } from '../components/TrafficLight';
 import { DataTable, type Column } from '../components/DataTable';
-import { listWatchlist, type InvestmentRow } from '../lib/ipc';
+import { listWatchlist, calculateIntrinsicValue, type InvestmentRow, type DCFResult } from '../lib/ipc';
 
 interface FinancialInputs {
   revenue: number;
@@ -88,6 +88,30 @@ function compositeColor(score: number): 'green' | 'orange' | 'red' {
   return 'red';
 }
 
+function mosColor(mos: number): string {
+  if (mos >= 0.30) return '#788c5d';  // green — good margin
+  if (mos >= 0.10) return '#d97757';  // amber
+  return '#e05252';                    // red — expensive
+}
+
+function mosBg(mos: number): string {
+  if (mos >= 0.30) return 'rgba(120,140,93,0.08)';
+  if (mos >= 0.10) return 'rgba(217,119,87,0.08)';
+  return 'rgba(224,82,82,0.08)';
+}
+
+function mosBorder(mos: number): string {
+  if (mos >= 0.30) return 'rgba(120,140,93,0.2)';
+  if (mos >= 0.10) return 'rgba(217,119,87,0.2)';
+  return 'rgba(224,82,82,0.2)';
+}
+
+function mosLabel(mos: number): string {
+  if (mos >= 0.30) return 'Wide margin — attractive';
+  if (mos >= 0.10) return 'Narrow margin — caution';
+  return 'Negative / insufficient margin';
+}
+
 export function Screener() {
   const [investments, setInvestments] = useState<InvestmentRow[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -99,6 +123,14 @@ export function Screener() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ScreenerResult | null>(null);
   const [error, setError] = useState('');
+
+  // DCF / Intrinsic Value state
+  const [dcfGrowthRate, setDcfGrowthRate] = useState(8);
+  const [dcfTerminalGrowth, setDcfTerminalGrowth] = useState(3);
+  const [dcfDiscountRate, setDcfDiscountRate] = useState(12);
+  const [dcfYears, setDcfYears] = useState(10);
+  const [dcfResult, setDcfResult] = useState<DCFResult | null>(null);
+  const [showFlowsTable, setShowFlowsTable] = useState(false);
 
   useEffect(() => {
     listWatchlist().then(setInvestments).catch(console.error);
@@ -114,6 +146,7 @@ export function Screener() {
     setRunning(true);
     setError('');
     setResult(null);
+    setDcfResult(null);
     try {
       const input = {
         investment: {
@@ -141,6 +174,25 @@ export function Screener() {
     }
   }
 
+  function handleCalculateDCF() {
+    if (!result) return;
+    const ownerEarnings = result.valuation.ownerEarnings;
+    const perShare = current.sharesOutstanding > 0
+      ? ownerEarnings / current.sharesOutstanding
+      : ownerEarnings;
+
+    const dcf = calculateIntrinsicValue(
+      perShare,
+      dcfGrowthRate / 100,
+      dcfTerminalGrowth / 100,
+      dcfDiscountRate / 100,
+      dcfYears,
+      price,
+    );
+    setDcfResult(dcf);
+    setShowFlowsTable(false);
+  }
+
   const valuationRows = result
     ? [
         { metric: 'EV/EBITDA', value: result.valuation.evEbitda?.toFixed(1) ?? 'N/A' },
@@ -156,11 +208,17 @@ export function Screener() {
     { key: 'value', header: 'Value', align: 'right' },
   ];
 
+  const flowCols: Column<{ year: number; cf: number; pv: number }>[] = [
+    { key: 'year', header: 'Year', render: (r) => `Year ${r.year}` },
+    { key: 'cf', header: 'Cash Flow', align: 'right', render: (r) => formatCurrency(r.cf) },
+    { key: 'pv', header: 'Present Value', align: 'right', render: (r) => formatCurrency(r.pv) },
+  ];
+
   return (
     <div className="p-8 max-w-5xl">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Screener</h1>
-        <p className="text-gray-500 mt-1 text-sm">Z-Score, F-Score, M-Score + valuation metrics</p>
+        <p className="text-gray-500 mt-1 text-sm">Z-Score, F-Score, M-Score + valuation metrics + intrinsic value</p>
       </div>
 
       {/* Controls */}
@@ -182,7 +240,7 @@ export function Screener() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Share Price</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Share Price (ZAR)</label>
             <input
               type="number"
               value={price}
@@ -236,7 +294,7 @@ export function Screener() {
         </button>
       </div>
 
-      {/* Results */}
+      {/* Screener Results */}
       {result && (
         <>
           {result.blocked && (
@@ -295,7 +353,7 @@ export function Screener() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-6 mb-8">
             <div>
               <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
                 Valuation Metrics
@@ -323,6 +381,139 @@ export function Screener() {
                 <p><strong>M-Score:</strong> {result.beneishM.isManipulator ? 'Earnings manipulation likely' : 'No manipulation flag'}</p>
               </div>
             </div>
+          </div>
+
+          {/* ── Intrinsic Value Calculator ──────────────────────────────────── */}
+          <div className="bg-white rounded-xl border border-gray-200/60 p-6">
+            <h3 className="text-sm font-semibold text-gray-700 mb-1">Intrinsic Value Calculator</h3>
+            <p className="text-xs text-gray-400 mb-4">
+              Two-stage DCF using Owner Earnings per share. Owner Earnings:{' '}
+              <span className="font-medium text-gray-600">{formatCompact(result.valuation.ownerEarnings)}</span>
+              {current.sharesOutstanding > 0 && (
+                <> &mdash; per share: <span className="font-medium text-gray-600">{formatCurrency(result.valuation.ownerEarnings / current.sharesOutstanding)}</span></>
+              )}
+            </p>
+
+            <div className="grid grid-cols-4 gap-4 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Growth Rate (%)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="50"
+                  value={dcfGrowthRate}
+                  onChange={(e) => setDcfGrowthRate(Number(e.target.value))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Terminal Growth (%)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="10"
+                  value={dcfTerminalGrowth}
+                  onChange={(e) => setDcfTerminalGrowth(Number(e.target.value))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Discount Rate / WACC (%)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  max="40"
+                  value={dcfDiscountRate}
+                  onChange={(e) => setDcfDiscountRate(Number(e.target.value))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Projection Years</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="3"
+                  max="30"
+                  value={dcfYears}
+                  onChange={(e) => setDcfYears(Number(e.target.value))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleCalculateDCF}
+              className="px-5 py-2 text-sm font-medium text-white rounded-lg hover:opacity-90"
+              style={{ backgroundColor: '#6a9bcc' }}
+            >
+              Calculate Intrinsic Value
+            </button>
+
+            {/* DCF Results */}
+            {dcfResult && (
+              <div className="mt-6">
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  {/* Intrinsic Value */}
+                  <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(106,155,204,0.08)', borderColor: 'rgba(106,155,204,0.2)' }}>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Intrinsic Value / Share</p>
+                    <p className="text-2xl font-bold" style={{ color: '#6a9bcc' }}>
+                      {formatCurrency(dcfResult.intrinsicValue)}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">Current price: {formatCurrency(price)}</p>
+                  </div>
+
+                  {/* Margin of Safety */}
+                  <div
+                    className="rounded-lg p-4 border"
+                    style={{ backgroundColor: mosBg(dcfResult.marginOfSafety), borderColor: mosBorder(dcfResult.marginOfSafety) }}
+                  >
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Margin of Safety</p>
+                    <p className="text-2xl font-bold" style={{ color: mosColor(dcfResult.marginOfSafety) }}>
+                      {(dcfResult.marginOfSafety * 100).toFixed(1)}%
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: mosColor(dcfResult.marginOfSafety) }}>
+                      {mosLabel(dcfResult.marginOfSafety)}
+                    </p>
+                  </div>
+
+                  {/* PV breakdown */}
+                  <div className="rounded-lg p-4 border border-gray-200/60 bg-gray-50 space-y-2">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">PV Breakdown</p>
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>Explicit PV</span>
+                      <span className="font-medium">{formatCurrency(dcfResult.explicitPV)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>Terminal PV</span>
+                      <span className="font-medium">{formatCurrency(dcfResult.terminalPV)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-semibold text-gray-800 pt-1 border-t border-gray-200">
+                      <span>Total</span>
+                      <span>{formatCurrency(dcfResult.intrinsicValue)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Collapsible yearly table */}
+                <details open={showFlowsTable} onToggle={(e) => setShowFlowsTable((e.target as HTMLDetailsElement).open)}>
+                  <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700 mb-2">
+                    Yearly Cash Flow Table ({dcfResult.flows.length} years)
+                  </summary>
+                  <div className="mt-2">
+                    <DataTable
+                      columns={flowCols}
+                      rows={dcfResult.flows}
+                      keyField="year"
+                      compact
+                    />
+                  </div>
+                </details>
+              </div>
+            )}
           </div>
         </>
       )}

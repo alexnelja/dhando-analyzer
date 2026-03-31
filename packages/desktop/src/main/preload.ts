@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('dhando', {
   rules: {
     list: () => ipcRenderer.invoke('dhando:rules:list'),
     load: (dir: string) => ipcRenderer.invoke('dhando:rules:load', dir),
+    create: (rule: unknown) => ipcRenderer.invoke('dhando:rules:create', rule),
   },
 
   distress: {
