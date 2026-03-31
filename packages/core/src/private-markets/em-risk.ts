@@ -33,20 +33,24 @@ export interface EmRiskInput {
   liquidityRisk: number;
 }
 
-/** Classification level for a single risk dimension or the overall EM risk. */
-export type RiskLevel = 'low' | 'medium' | 'high';
+/**
+ * Classification level for a single EM risk dimension or the overall EM risk.
+ * Named `EmRiskLevel` (rather than `RiskLevel`) to avoid barrel-export
+ * collisions with the identically-shaped type in `deal-analyzer/premortem.ts`.
+ */
+export type EmRiskLevel = 'low' | 'medium' | 'high';
 
 /** Result of the EM risk assessment. */
 export interface EmRiskResult {
   /** Equal-weighted average of the four factor scores (0–10). */
   overallRisk: number;
   /** Classification of the overall risk level. */
-  riskLevel: RiskLevel;
+  riskLevel: EmRiskLevel;
   /** Per-factor breakdown with individual classifications. */
   factors: {
     name: string;
     score: number;
-    level: RiskLevel;
+    level: EmRiskLevel;
   }[];
 }
 
@@ -70,10 +74,10 @@ const FACTORS: ReadonlyArray<{ field: keyof EmRiskInput; name: string }> = [
 // ---------------------------------------------------------------------------
 
 /**
- * Classify a numeric risk score into a {@link RiskLevel}.
+ * Classify a numeric risk score into an {@link EmRiskLevel}.
  * @internal
  */
-function classifyRisk(score: number): RiskLevel {
+function classifyRisk(score: number): EmRiskLevel {
   if (score < LOW_THRESHOLD) return 'low';
   if (score <= HIGH_THRESHOLD) return 'medium';
   return 'high';

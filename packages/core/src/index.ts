@@ -13,3 +13,4 @@ export * from './screener/index.js';
 export * from './deal-analyzer/index.js';
 export * from './portfolio/index.js';
 export * from './distress/index.js';
+export * from './private-markets/index.js';
