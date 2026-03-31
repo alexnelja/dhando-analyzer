@@ -260,25 +260,31 @@ export function Screener() {
       ? ownerEarnings / current.sharesOutstanding
       : ownerEarnings;
 
-    const dcf = calculateIntrinsicValue(
-      perShare,
-      dcfGrowthRate / 100,
-      dcfTerminalGrowth / 100,
-      dcfDiscountRate / 100,
-      dcfYears,
-      price,
-    );
-    setDcfResult(dcf);
-    setShowFlowsTable(false);
-
-    // Persist intrinsic value back to the investment record
     try {
-      await updateInvestment(selectedInvestment.id, {
-        intrinsic_value: dcf.intrinsicValue,
-        intrinsic_value_calculated_at: new Date().toISOString(),
-      });
-    } catch (saveErr) {
-      console.error('[Screener] Failed to persist intrinsic value:', saveErr);
+      const dcf = calculateIntrinsicValue(
+        perShare,
+        dcfGrowthRate / 100,
+        dcfTerminalGrowth / 100,
+        dcfDiscountRate / 100,
+        dcfYears,
+        price,
+      );
+      setDcfResult(dcf);
+      setShowFlowsTable(false);
+      setError('');
+
+      // Persist intrinsic value back to the investment record
+      try {
+        await updateInvestment(selectedInvestment.id, {
+          intrinsic_value: dcf.intrinsicValue,
+          intrinsic_value_calculated_at: new Date().toISOString(),
+        });
+      } catch (saveErr) {
+        console.error('[Screener] Failed to persist intrinsic value:', saveErr);
+      }
+    } catch (dcfErr) {
+      setError(`DCF error: ${String(dcfErr instanceof Error ? dcfErr.message : dcfErr)}`);
+      setDcfResult(null);
     }
   }
 

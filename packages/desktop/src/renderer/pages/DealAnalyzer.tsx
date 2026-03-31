@@ -77,6 +77,26 @@ export function DealAnalyzer() {
   }, []);
 
   const selectedInvestment = investments.find((i) => i.id === selectedId);
+  const screenerDataAvailable = !!(
+    selectedInvestment &&
+    (selectedInvestment.moat_score !== null ||
+      selectedInvestment.management_score !== null ||
+      selectedInvestment.intrinsic_value !== null)
+  );
+
+  // Sync moat/management scores from stored investment when selection changes
+  useEffect(() => {
+    if (!selectedInvestment) return;
+    if (selectedInvestment.moat_score !== null) {
+      setMoatScore(selectedInvestment.moat_score);
+    }
+    if (selectedInvestment.management_score !== null) {
+      setManagementScore(selectedInvestment.management_score);
+    }
+  }, [selectedId]);
+
+  const probabilitySum = scenarios.reduce((sum, s) => sum + s.probability, 0);
+  const probabilitySumOk = Math.abs(probabilitySum - 1.0) <= 0.05;
 
   function updateScenario(index: number, field: keyof ScenarioInput, value: number) {
     setScenarios((prev) =>
@@ -93,7 +113,14 @@ export function DealAnalyzer() {
     setError('');
     setResult(null);
 
-    const ownerEarnings = baseRevenue * 0.12;
+    const ownerEarnings = selectedInvestment.intrinsic_value !== null
+      ? selectedInvestment.intrinsic_value * (sharesOutstanding / 1)  // intrinsic_value is per-share; scale back
+      : baseRevenue * 0.12;
+
+    // Use stored screener fields when available, fall back to sensible defaults
+    const compositeScore = selectedInvestment.circle_of_competence_fit ?? 58;
+    const storedMoat = selectedInvestment.moat_score ?? moatScore;
+    const storedManagement = selectedInvestment.management_score ?? managementScore;
 
     try {
       const input = {
@@ -108,17 +135,17 @@ export function DealAnalyzer() {
           altmanZ: { score: 2.5, zone: 'grey' as const },
           piotroskiF: { score: 6 },
           beneishM: { score: -2.5, likelyManipulator: false },
-          compositeScore: 58,
+          compositeScore,
           valuation: {
             evEbitda: 8,
             pe: 18,
             pb: 2.1,
             fcfYield: 0.05,
-            ownerEarnings,
+            ownerEarnings: baseRevenue * 0.12,
           },
         },
-        moatScore,
-        managementScore,
+        moatScore: storedMoat,
+        managementScore: storedManagement,
         scenarioInputs: scenarios,
         baseRevenue,
         projectionYears,
@@ -209,6 +236,13 @@ export function DealAnalyzer() {
           </div>
         </div>
 
+        {/* Screener data warning */}
+        {selectedInvestment && !screenerDataAvailable && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+            Run the Screener first for more accurate analysis. Moat, management, and intrinsic value scores are not yet stored for this investment.
+          </div>
+        )}
+
         {/* Scenario inputs */}
         <div>
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Scenarios</h3>
@@ -246,6 +280,11 @@ export function DealAnalyzer() {
                 </div>
               </div>
             ))}
+          </div>
+          {/* Probability sum validator */}
+          <div className={`mt-2 text-xs font-medium ${probabilitySumOk ? 'text-gray-400' : 'text-red-600'}`}>
+            Probability sum: {probabilitySum.toFixed(2)}
+            {!probabilitySumOk && ' — must equal 1.00 (tolerance 0.05)'}
           </div>
         </div>
 

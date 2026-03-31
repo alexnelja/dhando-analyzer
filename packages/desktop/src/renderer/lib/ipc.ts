@@ -282,6 +282,12 @@ export function calculateIntrinsicValue(
   years: number,
   currentPrice: number,
 ): DCFResult {
+  if (discountRate <= terminalGrowth) {
+    throw new Error('Discount rate must be greater than terminal growth rate');
+  }
+  if (ownerEarnings <= 0) {
+    throw new Error('Owner earnings must be positive');
+  }
   let explicitPV = 0;
   const flows: { year: number; cf: number; pv: number }[] = [];
   for (let y = 1; y <= years; y++) {

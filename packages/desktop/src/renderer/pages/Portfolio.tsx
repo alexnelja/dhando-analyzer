@@ -27,6 +27,8 @@ export function Portfolio() {
   const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [closingPosition, setClosingPosition] = useState<{ id: string; name: string } | null>(null);
+  const [closePrice, setClosePrice] = useState('');
 
   const buildPositions = useCallback(
     (pos: PortfolioPositionRow[], inv: InvestmentRow[], prices: Record<string, number>): PositionWithMeta[] => {
@@ -133,11 +135,19 @@ export function Portfolio() {
     }
   }
 
-  async function handleClose(investmentId: string) {
-    const price = prompt('Exit price per share:');
-    if (!price) return;
+  function openCloseModal(investmentId: string, name: string) {
+    setClosingPosition({ id: investmentId, name });
+    setClosePrice('');
+  }
+
+  async function handleConfirmClose() {
+    if (!closingPosition || !closePrice) return;
+    const exitPrice = Number(closePrice);
+    if (isNaN(exitPrice) || exitPrice <= 0) return;
     try {
-      await window.dhando.portfolio.close(investmentId, Number(price));
+      await (window as any).dhando.portfolio.close(closingPosition.id, exitPrice);
+      setClosingPosition(null);
+      setClosePrice('');
       await reload();
     } catch (err) {
       console.error(err);
@@ -246,7 +256,7 @@ export function Portfolio() {
       align: 'right',
       render: (row) => (
         <button
-          onClick={() => handleClose(row.investmentId)}
+          onClick={() => openCloseModal(row.investmentId, row.name ?? 'Position')}
           className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300"
         >
           Close
@@ -373,6 +383,46 @@ export function Portfolio() {
           keyField="id"
           emptyMessage="No positions. Add your first position above or use the + Portfolio button in the Watchlist."
         />
+      )}
+
+      {/* Close position modal */}
+      {closingPosition && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6 w-80">
+            <h3 className="text-sm font-semibold text-gray-800 mb-1">Close Position</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Enter exit price per share for <span className="font-medium text-gray-700">{closingPosition.name}</span>
+            </p>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Exit Price (ZAR per share)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={closePrice}
+              onChange={(e) => setClosePrice(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmClose(); if (e.key === 'Escape') setClosingPosition(null); }}
+              autoFocus
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 mb-4"
+              placeholder="e.g. 52.50"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleConfirmClose}
+                disabled={!closePrice || Number(closePrice) <= 0}
+                className="px-4 py-2 text-sm text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: '#d97757' }}
+              >
+                Confirm Close
+              </button>
+              <button
+                onClick={() => setClosingPosition(null)}
+                className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:border-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Traffic light legend */}

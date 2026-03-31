@@ -75,6 +75,16 @@ export function Layout({ children }: LayoutProps) {
             v0.1.0 — Phase 9
           </p>
         </div>
+
+        {/* Browser mode warning */}
+        {typeof window !== 'undefined' && !(window as any).dhando && (
+          <div
+            className="px-4 py-3 text-xs text-center leading-snug"
+            style={{ backgroundColor: '#92400e', color: '#fef3c7' }}
+          >
+            Browser Mode — data is not persisted. Run in Electron for full functionality.
+          </div>
+        )}
       </aside>
 
       {/* Main content */}
