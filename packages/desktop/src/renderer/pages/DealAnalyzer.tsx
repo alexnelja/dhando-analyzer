@@ -3,7 +3,7 @@ import { formatCompact } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge } from '../components/TrafficLight';
 import { DataTable, type Column } from '../components/DataTable';
-import { listWatchlist, type InvestmentRow } from '../lib/ipc';
+import { listWatchlist, runDealAnalysis, type InvestmentRow } from '../lib/ipc';
 
 interface ScenarioInput {
   name: 'bear' | 'base' | 'bull';
@@ -160,7 +160,7 @@ export function DealAnalyzer() {
         winProbability,
       };
 
-      const res = (await window.dhando.analyze(input)) as DealAnalysis;
+      const res = (await runDealAnalysis(input)) as DealAnalysis;
       setResult(res);
     } catch (err) {
       setError(String(err));

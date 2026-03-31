@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge } from '../components/TrafficLight';
-import { listWatchlist, type InvestmentRow } from '../lib/ipc';
+import { listWatchlist, runDistressCheck, type InvestmentRow } from '../lib/ipc';
 
 interface DistressResult {
   investmentId: string;
@@ -97,7 +97,7 @@ export function DistressRadar() {
         workingCapitalPrior,
         distressFactors,
       };
-      const res = (await window.dhando.distress.check(input)) as DistressResult;
+      const res = (await runDistressCheck(input)) as unknown as DistressResult;
       setResult(res);
     } catch (err) {
       setError(String(err));

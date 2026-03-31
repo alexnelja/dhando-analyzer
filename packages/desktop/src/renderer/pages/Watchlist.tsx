@@ -11,6 +11,7 @@ import {
   getStockProfile,
   getStockPrice,
   addPosition,
+  setInvestmentStatus,
   type InvestmentRow,
   type InvestmentStatus,
   type InvestmentType,
@@ -67,6 +68,61 @@ const EMPTY_PORTFOLIO_MODAL: PortfolioModalState = {
   error: '',
   success: false,
 };
+
+function StatusDropdown({
+  currentStatus,
+  onStatusChange,
+}: {
+  currentStatus: InvestmentStatus;
+  onStatusChange: (s: InvestmentStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  const statuses: InvestmentStatus[] = [
+    'screening',
+    'researching',
+    'deep_dive',
+    'ready_to_buy',
+    'held',
+    'exited',
+    'rejected',
+  ];
+
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(!open)} className="cursor-pointer">
+        <StatusBadge status={currentStatus} />
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+          {statuses.map((s) => (
+            <button
+              key={s}
+              onClick={() => {
+                onStatusChange(s);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-1.5 text-xs capitalize hover:bg-gray-50 ${
+                s === currentStatus ? 'font-semibold text-orange-600' : 'text-gray-600'
+              }`}
+            >
+              {s.replace(/_/g, ' ')}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Watchlist() {
   const [rows, setRows] = useState<InvestmentRow[]>([]);
@@ -224,6 +280,15 @@ export function Watchlist() {
     }
   }
 
+  async function handleStatusChange(id: string, newStatus: InvestmentStatus) {
+    try {
+      await setInvestmentStatus(id, newStatus);
+      await reload();
+    } catch (err) {
+      console.error('[Watchlist] setInvestmentStatus failed:', err);
+    }
+  }
+
   function openModal() {
     setForm({ ...EMPTY_FORM });
     setSearchQuery('');
@@ -301,7 +366,12 @@ export function Watchlist() {
     {
       key: 'status',
       header: 'Status',
-      render: (row) => <StatusBadge status={row.status} />,
+      render: (row) => (
+        <StatusDropdown
+          currentStatus={row.status}
+          onStatusChange={(newStatus) => handleStatusChange(row.id, newStatus)}
+        />
+      ),
     },
     {
       key: 'sector',

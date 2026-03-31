@@ -96,10 +96,23 @@ export interface StockSearchResult {
 // ── Detect environment ───────────────────────────────────────────────────────
 const isElectron = typeof window !== 'undefined' && !!(window as any).dhando;
 
-// ── In-memory store for browser mode ─────────────────────────────────────────
-let browserWatchlist: InvestmentRow[] = [];
-let browserRules: (Rule & { id: string })[] = [];
-let browserPositions: PortfolioPositionRow[] = [];
+// ── localStorage helpers ──────────────────────────────────────────────────────
+function loadFromStorage<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : fallback;
+  } catch { return fallback; }
+}
+
+function saveToStorage(key: string, data: unknown): void {
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+}
+
+// ── In-memory store for browser mode (persisted to localStorage) ──────────────
+let browserWatchlist: InvestmentRow[] = loadFromStorage('dhando_watchlist', []);
+let browserRules: (Rule & { id: string })[] = loadFromStorage('dhando_rules', []);
+let browserPositions: PortfolioPositionRow[] = loadFromStorage('dhando_positions', []);
 let browserIdCounter = 1;
 
 function generateId(): string {
@@ -147,6 +160,7 @@ export async function addWatchlistEntry(data: WatchlistEntry): Promise<string> {
     updated_at: now,
   };
   browserWatchlist.push(row);
+  saveToStorage('dhando_watchlist', browserWatchlist);
   return id;
 }
 
@@ -164,6 +178,7 @@ export async function advanceEntry(id: string): Promise<void> {
       row.updated_at = new Date().toISOString();
     }
   }
+  saveToStorage('dhando_watchlist', browserWatchlist);
 }
 
 export async function removeEntry(id: string): Promise<void> {
@@ -176,6 +191,7 @@ export async function removeEntry(id: string): Promise<void> {
     row.status = 'rejected';
     row.updated_at = new Date().toISOString();
   }
+  saveToStorage('dhando_watchlist', browserWatchlist);
 }
 
 // ── Portfolio ────────────────────────────────────────────────────────────────
@@ -246,6 +262,7 @@ export async function createRuleEntry(rule: RuleDocumentInput): Promise<string> 
     timesCorrect: 0,
     believabilityScore: 0.5,
   } as unknown as Rule & { id: string });
+  saveToStorage('dhando_rules', browserRules);
   return id;
 }
 
@@ -263,6 +280,7 @@ export async function addPosition(investmentId: string, costBasis: number, share
     exitedAt: null,
     exitPrice: null,
   });
+  saveToStorage('dhando_positions', browserPositions);
   return 'ok';
 }
 
@@ -305,26 +323,162 @@ export function calculateIntrinsicValue(
   return { intrinsicValue, explicitPV, terminalPV, marginOfSafety, flows };
 }
 
-// ── Stock Search (EODHD) ─────────────────────────────────────────────────────
+// ── Distress Radar (browser fallback) ────────────────────────────────────────
+
+export interface DistressRadarInput {
+  investmentId: string;
+  altmanZ: number;
+  piotroskiFCurrent: number;
+  piotroskiFPrior: number;
+  beneishM: number;
+  fcfCurrent: number;
+  fcfPrior: number;
+  debtToEbitda: number;
+  workingCapitalCurrent: number;
+  workingCapitalPrior: number;
+  distressFactors: {
+    cause: number; industry: number; balanceSheet: number;
+    management: number; competition: number; revenueBase: number; assetValue: number;
+  };
+}
+
+export interface DistressRadarResult {
+  compositeDistressScore: number;
+  classification: 'temporary' | 'uncertain' | 'permanent';
+  permanenceScore: number;
+  isTurnaroundCandidate: boolean;
+}
+
+export async function runDistressCheck(input: DistressRadarInput): Promise<DistressRadarResult> {
+  if (isElectron) {
+    return window.dhando.distress.check(input) as Promise<DistressRadarResult>;
+  }
+  // Browser fallback — compute locally
+  const f = input.distressFactors;
+  const permanenceScore = f.cause * 0.20 + f.industry * 0.15 + f.balanceSheet * 0.20 +
+    f.management * 0.15 + f.competition * 0.10 + f.revenueBase * 0.10 + f.assetValue * 0.10;
+  const classification = permanenceScore < 3.5 ? 'temporary' : permanenceScore > 6.5 ? 'permanent' : 'uncertain';
+
+  // Simple composite distress score
+  const zDistress = Math.max(0, Math.min(100, (3 - input.altmanZ) / 3 * 100));
+  const fTrend = input.piotroskiFCurrent < input.piotroskiFPrior ? 70 : 30;
+  const mDistress = input.beneishM > -1.78 ? 80 : 20;
+  const fcfDistress = input.fcfCurrent < 0 ? 80 : input.fcfCurrent < input.fcfPrior ? 60 : 20;
+  const levDistress = Math.min(100, input.debtToEbitda / 6 * 100);
+  const wcDistress = input.workingCapitalCurrent < input.workingCapitalPrior ? 70 : 30;
+
+  const compositeDistressScore = zDistress * 0.30 + fTrend * 0.20 + mDistress * 0.15 +
+    fcfDistress * 0.15 + levDistress * 0.10 + wcDistress * 0.10;
+
+  const isTurnaroundCandidate = classification === 'temporary' &&
+    input.piotroskiFCurrent > input.piotroskiFPrior && compositeDistressScore > 60;
+
+  return { compositeDistressScore, classification, permanenceScore, isTurnaroundCandidate };
+}
+
+// ── Private Markets (browser fallback) ───────────────────────────────────────
+
+export interface PrivateMarketsInput {
+  investmentId: string;
+  dhandhoFit: Record<string, number>;
+  emRisk?: { politicalInstability: number; currencyRisk: number; regulatoryRisk: number; exitLiquidity: number };
+  netIncome: number;
+  depreciation: number;
+  capex: number;
+}
+
+export interface PrivateMarketsResult {
+  dhandhoFit: {
+    totalScore: number;
+    maxScore: number;
+    passesGate: boolean;
+    breakdown: Array<{ principle: string; score: number; weight: number; weightedScore: number }>;
+  };
+  emRisk: { overallRisk: number; riskLevel: string } | null;
+  ownerEarnings: number;
+}
+
+export async function analyzePrivateMarket(input: PrivateMarketsInput): Promise<PrivateMarketsResult> {
+  if (isElectron) {
+    return window.dhando.privateMarkets.analyze(input) as Promise<PrivateMarketsResult>;
+  }
+  // Browser fallback — compute locally
+  const d = input.dhandhoFit;
+  const principles = [
+    { principle: 'Existing business', score: d.existingBusiness ?? 5, weight: 1.0 },
+    { principle: 'Simple business', score: d.simpleBusiness ?? 5, weight: 1.0 },
+    { principle: 'Distressed business', score: d.distressedBusiness ?? 5, weight: 1.0 },
+    { principle: 'Durable advantage', score: d.durableAdvantage ?? 5, weight: 1.5 },
+    { principle: 'Bet heavily', score: d.betHeavily ?? 5, weight: 1.0 },
+    { principle: 'Arbitrage', score: d.arbitrageOpportunity ?? 5, weight: 1.0 },
+    { principle: 'Margin of safety', score: d.marginOfSafety ?? 5, weight: 1.5 },
+    { principle: 'Low risk, high uncertainty', score: d.lowRiskHighUncertainty ?? 5, weight: 1.5 },
+    { principle: 'Copycat', score: d.copycatNotInnovator ?? 5, weight: 1.0 },
+  ];
+  const breakdown = principles.map((p) => ({ ...p, weightedScore: p.score * p.weight }));
+  const totalScore = breakdown.reduce((s, b) => s + b.weightedScore, 0);
+  const maxScore = 105;
+  const passesGate = totalScore >= 54;
+
+  let emRisk = null;
+  if (input.emRisk) {
+    const e = input.emRisk;
+    const avg = (e.politicalInstability + e.currencyRisk + e.regulatoryRisk + e.exitLiquidity) / 4;
+    emRisk = { overallRisk: avg, riskLevel: avg < 3.5 ? 'low' : avg > 6.5 ? 'high' : 'medium' };
+  }
+
+  return {
+    dhandhoFit: { totalScore, maxScore, passesGate, breakdown },
+    emRisk,
+    ownerEarnings: input.netIncome + input.depreciation - input.capex,
+  };
+}
+
+// ── Update investment status ────────────────────────────────────────────────
+
+export async function setInvestmentStatus(id: string, status: InvestmentStatus): Promise<void> {
+  if (isElectron) {
+    await window.dhando.watchlist.update(id, { status });
+    return;
+  }
+  const inv = browserWatchlist.find((r) => r.id === id);
+  if (inv) {
+    inv.status = status;
+    inv.updated_at = new Date().toISOString();
+  }
+  saveToStorage('dhando_watchlist', browserWatchlist);
+}
+
+// ── Stock Search (EODHD) — uses Vite proxy in dev, direct in Electron ───────
 
 const EODHD_API_KEY = '69ca80bde491c3.16456760';
+
+function eodhUrl(path: string): string {
+  const sep = path.includes('?') ? '&' : '?';
+  // In browser dev mode, use Vite proxy to avoid CORS
+  if (!isElectron) {
+    return `/api/eodhd${path}${sep}api_token=${EODHD_API_KEY}`;
+  }
+  return `https://eodhd.com/api${path}${sep}api_token=${EODHD_API_KEY}`;
+}
 
 export async function searchStocks(query: string): Promise<StockSearchResult[]> {
   if (!query || query.length < 2) return [];
   try {
-    const url = `https://eodhd.com/api/search/${encodeURIComponent(query)}?api_token=${EODHD_API_KEY}&fmt=json&limit=10`;
+    const url = eodhUrl(`/search/${encodeURIComponent(query)}?fmt=json&limit=10`);
     const response = await fetch(url);
     if (!response.ok) return [];
     const data = await response.json();
     return Array.isArray(data) ? data : [];
-  } catch {
+  } catch (err) {
+    console.error('[searchStocks]', err);
     return [];
   }
 }
 
 export async function getStockProfile(ticker: string, exchange: string): Promise<{ sector: string; industry: string; price: number } | null> {
   try {
-    const url = `https://eodhd.com/api/fundamentals/${ticker}.${exchange}?api_token=${EODHD_API_KEY}&fmt=json&filter=General`;
+    const url = eodhUrl(`/fundamentals/${ticker}.${exchange}?fmt=json&filter=General`);
     const response = await fetch(url);
     if (!response.ok) return null;
     const data = await response.json();
@@ -340,7 +494,7 @@ export async function getStockProfile(ticker: string, exchange: string): Promise
 
 export async function getStockPrice(ticker: string, exchange: string): Promise<number | null> {
   try {
-    const url = `https://eodhd.com/api/real-time/${ticker}.${exchange}?api_token=${EODHD_API_KEY}&fmt=json`;
+    const url = eodhUrl(`/real-time/${ticker}.${exchange}?fmt=json`);
     const response = await fetch(url);
     if (!response.ok) return null;
     const data = await response.json();
@@ -361,7 +515,47 @@ export async function updateInvestment(id: string, updates: Partial<InvestmentRo
   const inv = browserWatchlist.find((r) => r.id === id);
   if (inv) {
     Object.assign(inv, updates, { updated_at: new Date().toISOString() });
+    saveToStorage('dhando_watchlist', browserWatchlist);
   }
+}
+
+// ── Deal Analyzer (browser fallback) ─────────────────────────────────────────
+
+export async function runDealAnalysis(input: any): Promise<any> {
+  if (isElectron) {
+    return window.dhando.analyze(input);
+  }
+  // Browser fallback — return a structured result from the input data
+  const ownerEarnings = (input.screenerResult?.valuation?.ownerEarnings ?? input.baseRevenue * 0.12);
+  const scenarios = input.scenarioInputs?.map((s: any) => ({
+    name: s.name,
+    terminalValue: input.baseRevenue * Math.pow(1 + s.revenueGrowthRate, input.projectionYears) * s.ebitdaMargin * s.exitMultiple,
+    presentValue: input.baseRevenue * Math.pow(1 + s.revenueGrowthRate, input.projectionYears) * s.ebitdaMargin * s.exitMultiple / Math.pow(1 + (input.dcfInput?.discountRate ?? 0.1), input.projectionYears),
+    probability: s.probability,
+  })) ?? [];
+  const weightedValue = scenarios.reduce((sum: number, s: any) => sum + s.presentValue * s.probability, 0);
+  const intrinsicValue = ownerEarnings * 10;
+  const marginOfSafety = input.currentPrice > 0 ? (intrinsicValue / input.sharesOutstanding - input.currentPrice) / (intrinsicValue / input.sharesOutstanding) : 0.3;
+  return {
+    scenarioModel: { scenarios, weightedValue },
+    dcf: { intrinsicValue, terminalValue: ownerEarnings * 8, presentValue: intrinsicValue },
+    kelly: { kellyFraction: 0.05, halfKelly: 0.025 },
+    kellyPosition: 0.05,
+    expectedValue: weightedValue,
+    intrinsicValue,
+    marginOfSafety,
+    blocked: false,
+    memo: {
+      thesis: `Analysis of ${input.name ?? 'investment'} based on provided scenarios.`,
+      risks: ['Market conditions', 'Execution risk'],
+      catalysts: ['Improved earnings', 'Sector re-rating'],
+    },
+    preMortem: {
+      risks: [
+        { factor: 'Valuation', severity: 'medium', description: 'Are assumptions realistic?' },
+      ],
+    },
+  };
 }
 
 // ── Magic Formula ─────────────────────────────────────────────────────────────

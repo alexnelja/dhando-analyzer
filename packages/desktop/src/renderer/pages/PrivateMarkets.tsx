@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { formatCompact } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge } from '../components/TrafficLight';
+import { analyzePrivateMarket } from '../lib/ipc';
 
 interface DhandhoFitInput {
   existingBusiness: number;
@@ -198,13 +199,13 @@ export function PrivateMarkets() {
     try {
       const input = {
         investmentId: 'manual',
-        dhandhoFit: dhandho,
+        dhandhoFit: dhandho as unknown as Record<string, number>,
         emRisk: includeEmRisk ? emRisk : undefined,
         netIncome,
         depreciation,
         capex,
       };
-      const res = (await window.dhando.privateMarkets.analyze(input)) as PrivateMarketsResult;
+      const res = (await analyzePrivateMarket(input)) as unknown as PrivateMarketsResult;
       setResult(res);
     } catch (err) {
       setError(String(err));
