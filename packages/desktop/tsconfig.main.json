@@ -1,19 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
+    "module": "commonjs",
+    "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
     "declaration": false,
     "sourceMap": true,
-    "outDir": "./dist/renderer",
-    "rootDir": "./src/renderer"
+    "outDir": "./dist/main",
+    "rootDir": "./src/main"
   },
-  "include": ["src/renderer/**/*"]
+  "include": ["src/main/**/*"]
 }
