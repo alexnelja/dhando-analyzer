@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatCompact } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge } from '../components/TrafficLight';
 
@@ -40,11 +41,11 @@ const DHANDHO_PRINCIPLES: { field: keyof DhandhoFitInput; label: string; weight:
   { field: 'existingBusiness', label: 'Existing business (not startup)', weight: 1 },
   { field: 'simpleBusiness', label: 'Simple business in slow-change industry', weight: 1 },
   { field: 'distressedBusiness', label: 'Distressed business in distressed industry', weight: 1 },
-  { field: 'durableAdvantage', label: 'Durable competitive advantage (1.5×)', weight: 1.5 },
+  { field: 'durableAdvantage', label: 'Durable competitive advantage (1.5x)', weight: 1.5 },
   { field: 'betHeavily', label: 'Bet heavily when odds favour', weight: 1 },
   { field: 'arbitrageOpportunity', label: 'Arbitrage opportunity', weight: 1 },
-  { field: 'marginOfSafety', label: 'Significant margin of safety (1.5×)', weight: 1.5 },
-  { field: 'lowRiskHighUncertainty', label: 'Low risk, high uncertainty (1.5×)', weight: 1.5 },
+  { field: 'marginOfSafety', label: 'Significant margin of safety (1.5x)', weight: 1.5 },
+  { field: 'lowRiskHighUncertainty', label: 'Low risk, high uncertainty (1.5x)', weight: 1.5 },
   { field: 'copycatNotInnovator', label: 'Copycat, not innovator', weight: 1 },
 ];
 
@@ -55,35 +56,140 @@ const EM_FACTORS: { field: keyof EmRiskInput; label: string }[] = [
   { field: 'exitLiquidity', label: 'Exit Liquidity Risk' },
 ];
 
-const DEFAULT_DHANDHO: DhandhoFitInput = {
-  existingBusiness: 7,
-  simpleBusiness: 6,
-  distressedBusiness: 5,
-  durableAdvantage: 7,
-  betHeavily: 6,
-  arbitrageOpportunity: 5,
-  marginOfSafety: 8,
-  lowRiskHighUncertainty: 7,
-  copycatNotInnovator: 6,
+const PIPELINE_STAGES = ['NDA', 'Screening', 'Meeting', 'Deep DD', 'IC Memo', 'Bidding', 'Closed'] as const;
+type PipelineStage = typeof PIPELINE_STAGES[number];
+
+// Pre-filled example deal with realistic SA data
+const EXAMPLE_DEAL = {
+  name: 'Cape Town Coffee Roasters (Pty) Ltd',
+  dealType: 'SME Acquisition',
+  description:
+    'A 15 year established coffee roasting and distribution business based in Cape Town. Owner is retiring and asking below market price. Strong local brand recognition and loyal distribution network serving 80+ cafes and restaurants across the Western Cape. Proven coffee model with stable recurring revenue. The business operates a single roastery with simple operations.',
+  dhandho: {
+    existingBusiness: 8,
+    simpleBusiness: 7,
+    distressedBusiness: 6,
+    durableAdvantage: 5,
+    betHeavily: 4,
+    arbitrageOpportunity: 3,
+    marginOfSafety: 7,
+    lowRiskHighUncertainty: 6,
+    copycatNotInnovator: 8,
+  } as DhandhoFitInput,
+  netIncome: 650000,
+  depreciation: 120000,
+  capex: 80000,
+  emRisk: {
+    politicalInstability: 4,
+    currencyRisk: 5,
+    regulatoryRisk: 3,
+    exitLiquidity: 6,
+  } as EmRiskInput,
 };
 
-const DEFAULT_EM: EmRiskInput = {
-  politicalInstability: 3,
-  currencyRisk: 4,
-  regulatoryRisk: 3,
-  exitLiquidity: 5,
-};
+function estimateDhandhoScores(
+  description: string,
+  financials: { netIncome: number; depreciation: number; capex: number },
+): DhandhoFitInput {
+  const desc = description.toLowerCase();
+
+  // Principle 1: Existing business — look for age/history keywords
+  const yearMatch = desc.match(/(\d+)\s*year/);
+  const existingBusiness = yearMatch
+    ? Math.min(10, parseInt(yearMatch[1], 10) / 2)
+    : 5;
+
+  // Principle 2: Simple business — fewer product lines = simpler
+  const simpleBusiness =
+    desc.includes('single') || desc.includes('simple')
+      ? 8
+      : desc.includes('diversified') || desc.includes('complex')
+      ? 3
+      : 6;
+
+  // Principle 3: Distressed — look for distress keywords
+  const distressedBusiness =
+    desc.includes('distress') || desc.includes('retiring') || desc.includes('liquidat')
+      ? 7
+      : desc.includes('discount') || desc.includes('below market')
+      ? 6
+      : 4;
+
+  // Principle 4: Durable advantage — moat keywords
+  const durableAdvantage =
+    desc.includes('brand') || desc.includes('patent') || desc.includes('license') || desc.includes('monopol')
+      ? 7
+      : desc.includes('contract') || desc.includes('loyal')
+      ? 6
+      : 4;
+
+  // Principle 5: Bet heavily — based on owner earnings margin
+  const ownerEarnings = financials.netIncome + financials.depreciation - financials.capex;
+  const betHeavily = ownerEarnings > 500000 ? 7 : ownerEarnings > 200000 ? 5 : 3;
+
+  // Principle 6: Arbitrage — pricing keywords
+  const arbitrageOpportunity =
+    desc.includes('undervalued') || desc.includes('below') || desc.includes('discount') ? 7 : 4;
+
+  // Principle 7: Margin of safety — financial health
+  const marginOfSafety = ownerEarnings > 0 ? Math.min(8, Math.round(ownerEarnings / 100000)) : 2;
+
+  // Principle 8: Low risk, high uncertainty
+  const lowRiskHighUncertainty =
+    desc.includes('stable') || desc.includes('recurring')
+      ? 7
+      : desc.includes('volatile') || desc.includes('cyclical')
+      ? 5
+      : 5;
+
+  // Principle 9: Copycat
+  const copycatNotInnovator =
+    desc.includes('innovat') || desc.includes('disrupt') || desc.includes('first')
+      ? 3
+      : desc.includes('proven') || desc.includes('established') || desc.includes('franchise')
+      ? 8
+      : 6;
+
+  return {
+    existingBusiness: Math.round(existingBusiness),
+    simpleBusiness,
+    distressedBusiness,
+    durableAdvantage,
+    betHeavily,
+    arbitrageOpportunity,
+    marginOfSafety,
+    lowRiskHighUncertainty,
+    copycatNotInnovator,
+  };
+}
 
 export function PrivateMarkets() {
-  const [dhandho, setDhandho] = useState<DhandhoFitInput>({ ...DEFAULT_DHANDHO });
-  const [emRisk, setEmRisk] = useState<EmRiskInput>({ ...DEFAULT_EM });
+  const [dealName, setDealName] = useState(EXAMPLE_DEAL.name);
+  const [dealDescription, setDealDescription] = useState(EXAMPLE_DEAL.description);
+  const [pipelineStage, setPipelineStage] = useState<PipelineStage>('Screening');
+  const [dhandho, setDhandho] = useState<DhandhoFitInput>({ ...EXAMPLE_DEAL.dhandho });
+  const [emRisk, setEmRisk] = useState<EmRiskInput>({ ...EXAMPLE_DEAL.emRisk });
   const [includeEmRisk, setIncludeEmRisk] = useState(false);
-  const [netIncome, setNetIncome] = useState(10000000);
-  const [depreciation, setDepreciation] = useState(2000000);
-  const [capex, setCapex] = useState(3000000);
+  const [netIncome, setNetIncome] = useState(EXAMPLE_DEAL.netIncome);
+  const [depreciation, setDepreciation] = useState(EXAMPLE_DEAL.depreciation);
+  const [capex, setCapex] = useState(EXAMPLE_DEAL.capex);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<PrivateMarketsResult | null>(null);
   const [error, setError] = useState('');
+  const [estimating, setEstimating] = useState(false);
+  const [estimateApplied, setEstimateApplied] = useState(false);
+
+  function handleAiEstimate() {
+    if (!dealDescription.trim()) return;
+    setEstimating(true);
+    setEstimateApplied(false);
+    // Run synchronously — heuristic, no async needed
+    const scores = estimateDhandhoScores(dealDescription, { netIncome, depreciation, capex });
+    setDhandho(scores);
+    setEstimating(false);
+    setEstimateApplied(true);
+    setTimeout(() => setEstimateApplied(false), 3000);
+  }
 
   async function handleAnalyze() {
     setRunning(true);
@@ -107,6 +213,8 @@ export function PrivateMarkets() {
     }
   }
 
+  const ownerEarningsLive = netIncome + depreciation - capex;
+
   return (
     <div className="p-8 max-w-5xl">
       <div className="mb-6">
@@ -116,10 +224,89 @@ export function PrivateMarkets() {
         </p>
       </div>
 
+      {/* Deal header */}
+      <div className="bg-white rounded-xl border border-gray-200/60 p-5 mb-5">
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Deal Name</label>
+            <input
+              type="text"
+              value={dealName}
+              onChange={(e) => setDealName(e.target.value)}
+              placeholder="e.g. Cape Town Coffee Roasters (Pty) Ltd"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Deal Description</label>
+            <textarea
+              value={dealDescription}
+              onChange={(e) => setDealDescription(e.target.value)}
+              rows={3}
+              placeholder="Describe the business — age, industry, distress, competitive advantage..."
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 resize-none"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Pipeline stage */}
+      <div className="bg-white rounded-xl border border-gray-200/60 p-5 mb-5">
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Deal Pipeline</h3>
+        <div className="flex items-center gap-0">
+          {PIPELINE_STAGES.map((stage, idx) => {
+            const isActive = stage === pipelineStage;
+            const isPast = PIPELINE_STAGES.indexOf(stage) < PIPELINE_STAGES.indexOf(pipelineStage);
+            return (
+              <React.Fragment key={stage}>
+                <button
+                  onClick={() => setPipelineStage(stage)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                    isActive
+                      ? 'text-white'
+                      : isPast
+                      ? 'text-gray-500 bg-gray-100 hover:bg-gray-200'
+                      : 'text-gray-400 bg-gray-50 hover:bg-gray-100'
+                  }`}
+                  style={isActive ? { backgroundColor: '#d97757' } : {}}
+                >
+                  {stage}
+                </button>
+                {idx < PIPELINE_STAGES.length - 1 && (
+                  <div
+                    className="h-0.5 flex-1 min-w-2"
+                    style={{ backgroundColor: isPast ? '#d97757' : '#e5e7eb' }}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-6 mb-6">
         {/* Dhandho Principles */}
         <div className="bg-white rounded-xl border border-gray-200/60 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">Dhandho Fit (9 Principles)</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-gray-700">Dhandho Fit (9 Principles)</h3>
+            <button
+              onClick={handleAiEstimate}
+              disabled={estimating || !dealDescription.trim()}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 ${
+                estimateApplied
+                  ? 'text-white'
+                  : 'text-white hover:opacity-90'
+              }`}
+              style={{ backgroundColor: estimateApplied ? '#788c5d' : '#6a9bcc' }}
+            >
+              {estimating ? 'Estimating...' : estimateApplied ? 'Applied' : 'AI Estimate Scores'}
+            </button>
+          </div>
+          {estimateApplied && (
+            <p className="text-xs text-green-600 mb-3 bg-green-50 rounded-lg px-3 py-1.5 border border-green-200">
+              Scores estimated from deal description. Review and adjust as needed.
+            </p>
+          )}
           <div className="space-y-3">
             {DHANDHO_PRINCIPLES.map((principle) => (
               <div key={principle.field}>
@@ -216,10 +403,10 @@ export function PrivateMarkets() {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Estimated Owner Earnings</span>
                   <span className="font-semibold" style={{ color: '#788c5d' }}>
-                    ${((netIncome + depreciation - capex) / 1e6).toFixed(2)}M
+                    {formatCompact(ownerEarningsLive)}
                   </span>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Net Income + D&A − CapEx</p>
+                <p className="text-xs text-gray-400 mt-1">Net Income + D&A - CapEx</p>
               </div>
             </div>
           </div>
@@ -263,7 +450,7 @@ export function PrivateMarkets() {
             </div>
             <ScoreCard
               label="Owner Earnings"
-              value={`$${(result.ownerEarnings / 1e6).toFixed(2)}M`}
+              value={formatCompact(result.ownerEarnings)}
               color="blue"
             />
           </div>

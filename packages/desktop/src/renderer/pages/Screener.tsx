@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { formatCompact } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge, type TrafficLightStatus } from '../components/TrafficLight';
 import { DataTable, type Column } from '../components/DataTable';
@@ -146,7 +147,7 @@ export function Screener() {
         { metric: 'P/E', value: result.valuation.pe?.toFixed(1) ?? 'N/A' },
         { metric: 'P/B', value: result.valuation.pb?.toFixed(1) ?? 'N/A' },
         { metric: 'FCF Yield', value: result.valuation.fcfYield ? `${(result.valuation.fcfYield * 100).toFixed(1)}%` : 'N/A' },
-        { metric: 'Owner Earnings', value: `$${(result.valuation.ownerEarnings / 1e6).toFixed(1)}M` },
+        { metric: 'Owner Earnings', value: formatCompact(result.valuation.ownerEarnings) },
       ]
     : [];
 

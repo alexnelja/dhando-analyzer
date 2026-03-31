@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { formatCompact } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge } from '../components/TrafficLight';
 import { DataTable, type Column } from '../components/DataTable';
@@ -143,8 +144,8 @@ export function DealAnalyzer() {
 
   const scenarioCols: Column<Record<string, unknown>>[] = [
     { key: 'name', header: 'Scenario', render: (row) => <span className="capitalize font-medium">{String(row.name)}</span> },
-    { key: 'terminalValue', header: 'Terminal Value', align: 'right', render: (row) => `$${(Number(row.terminalValue) / 1e6).toFixed(1)}M` },
-    { key: 'presentValue', header: 'PV', align: 'right', render: (row) => `$${(Number(row.presentValue) / 1e6).toFixed(1)}M` },
+    { key: 'terminalValue', header: 'Terminal Value', align: 'right', render: (row) => formatCompact(Number(row.terminalValue)) },
+    { key: 'presentValue', header: 'PV', align: 'right', render: (row) => formatCompact(Number(row.presentValue)) },
     { key: 'probability', header: 'Probability', align: 'right', render: (row) => `${(Number(row.probability) * 100).toFixed(0)}%` },
   ];
 
@@ -270,13 +271,13 @@ export function DealAnalyzer() {
           )}
 
           <div className="grid grid-cols-4 gap-4 mb-6">
-            <ScoreCard label="Intrinsic Value" value={`$${(result.intrinsicValue / 1e6).toFixed(1)}M`} color="green" />
+            <ScoreCard label="Intrinsic Value" value={formatCompact(result.intrinsicValue)} color="green" />
             <ScoreCard
               label="Margin of Safety"
               value={`${(result.marginOfSafety * 100).toFixed(1)}%`}
               color={result.marginOfSafety >= 0.25 ? 'green' : result.marginOfSafety >= 0 ? 'orange' : 'red'}
             />
-            <ScoreCard label="Expected Value" value={`$${(result.expectedValue / 1e6).toFixed(1)}M`} color="blue" />
+            <ScoreCard label="Expected Value" value={formatCompact(result.expectedValue)} color="blue" />
             <ScoreCard
               label="Kelly Position"
               value={`${(result.kellyPosition * 100).toFixed(1)}%`}

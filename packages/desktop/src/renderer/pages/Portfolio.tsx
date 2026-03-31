@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { formatCurrency, formatCompact } from '../lib/currency';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLight, TrafficLightBadge, type TrafficLightStatus } from '../components/TrafficLight';
 import { DataTable, type Column } from '../components/DataTable';
@@ -108,14 +109,14 @@ export function Portfolio() {
       ),
     },
     { key: 'shares', header: 'Shares', align: 'right', render: (row) => row.shares.toLocaleString() },
-    { key: 'costBasis', header: 'Cost', align: 'right', render: (row) => `$${row.costBasis.toFixed(2)}` },
+    { key: 'costBasis', header: 'Cost', align: 'right', render: (row) => formatCurrency(row.costBasis) },
     {
       key: 'currentPrice',
       header: 'Price',
       align: 'right',
       render: (row) => (
         <div className="flex items-center gap-2 justify-end">
-          <span>${(row.currentPrice ?? row.costBasis).toFixed(2)}</span>
+          <span>{formatCurrency(row.currentPrice ?? row.costBasis)}</span>
           <input
             type="number"
             placeholder="Update"
@@ -182,7 +183,7 @@ export function Portfolio() {
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <ScoreCard label="Total Value" value={`$${(totalValue / 1e6).toFixed(2)}M`} color="green" />
+        <ScoreCard label="Total Value" value={formatCompact(totalValue)} color="green" />
         <ScoreCard label="Positions" value={positions.length} subtitle="Active holdings" color="blue" />
         <ScoreCard
           label="Avg Return"
