@@ -631,25 +631,41 @@ export function Watchlist() {
                 {/* Search results dropdown */}
                 {showDropdown && searchResults.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-200 max-h-64 overflow-y-auto">
-                    {searchResults.map((stock, i) => (
-                      <button
-                        key={`${stock.Code}-${stock.Exchange}-${i}`}
-                        onClick={() => handleSelectStock(stock)}
-                        className="w-full text-left px-3 py-2.5 hover:bg-orange-50 transition-colors border-b border-gray-50 last:border-0"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-medium text-gray-900 text-sm">{stock.Name}</span>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="font-mono text-xs text-orange-600 font-semibold">{stock.Code}</span>
-                              <span className="text-xs text-gray-400">{stock.Exchange}</span>
-                              <span className="text-xs text-gray-400">{stock.Country}</span>
+                    {searchResults.map((stock, i) => {
+                      const isJse = ['JSE', 'JO', 'XJSE'].includes(stock.Exchange);
+                      const displayPrice = stock.previousClose
+                        ? isJse ? stock.previousClose / 100 : stock.previousClose
+                        : null;
+                      return (
+                        <button
+                          key={`${stock.Code}-${stock.Exchange}-${i}`}
+                          onClick={() => handleSelectStock(stock)}
+                          className="w-full text-left px-3 py-2.5 hover:bg-orange-50 transition-colors border-b border-gray-50 last:border-0"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-gray-900 text-sm">{stock.Name}</span>
+                                {isJse && (
+                                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-semibold rounded">JSE</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="font-mono text-xs text-orange-600 font-semibold">{stock.Code}</span>
+                                <span className="text-xs text-gray-400">{stock.Exchange}</span>
+                                <span className="text-xs text-gray-400">{stock.Country}</span>
+                                {displayPrice !== null && (
+                                  <span className="text-xs font-medium text-green-600">
+                                    {isJse ? `R ${displayPrice.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}` : `${stock.Currency} ${displayPrice.toFixed(2)}`}
+                                  </span>
+                                )}
+                              </div>
                             </div>
+                            <span className="text-xs text-gray-400 capitalize">{stock.Type}</span>
                           </div>
-                          <span className="text-xs text-gray-400 capitalize">{stock.Type}</span>
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

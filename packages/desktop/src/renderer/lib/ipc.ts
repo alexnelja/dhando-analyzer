@@ -90,6 +90,7 @@ export interface StockSearchResult {
   Country: string;
   Currency: string;
   ISIN: string;
+  isPrimary?: boolean;
   previousClose?: number;
   sector?: string;
   industry?: string;
@@ -483,14 +484,54 @@ function eodhUrl(path: string): string {
   return `https://eodhd.com/api${path}${sep}api_token=${EODHD_API_KEY}`;
 }
 
+// JSE exchange codes used by EODHD
+const JSE_EXCHANGES = ['JSE', 'JO', 'XJSE'];
+// Exchanges to prioritize (SA first, then major global)
+const EXCHANGE_PRIORITY: Record<string, number> = {
+  'JSE': 0, 'JO': 0, 'XJSE': 0,        // SA — highest priority
+  'LSE': 1, 'LON': 1,                     // London
+  'US': 2, 'NYSE': 2, 'NASDAQ': 2,        // US
+  'F': 3, 'XETRA': 3,                     // Germany
+  'AS': 4, 'PA': 4, 'MI': 4,              // Europe
+};
+
+function isJseExchange(exchange: string): boolean {
+  return JSE_EXCHANGES.includes(exchange.toUpperCase());
+}
+
+/**
+ * JSE prices from EODHD are in ZAC (cents). Convert to ZAR by dividing by 100.
+ * Non-JSE prices are already in their local currency.
+ */
+export function convertJsePrice(price: number, exchange: string): number {
+  if (isJseExchange(exchange)) {
+    return price / 100; // ZAC → ZAR
+  }
+  return price;
+}
+
 export async function searchStocks(query: string): Promise<StockSearchResult[]> {
   if (!query || query.length < 2) return [];
   try {
-    const url = eodhUrl(`/search/${encodeURIComponent(query)}?fmt=json&limit=10`);
+    // Search with higher limit to find JSE results
+    const url = eodhUrl(`/search/${encodeURIComponent(query)}?fmt=json&limit=25`);
     const response = await fetch(url);
     if (!response.ok) return [];
     const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    if (!Array.isArray(data)) return [];
+
+    // Sort: JSE first, then by exchange priority, then primary listings first
+    const sorted = data.sort((a: StockSearchResult, b: StockSearchResult) => {
+      const aPriority = EXCHANGE_PRIORITY[a.Exchange] ?? 10;
+      const bPriority = EXCHANGE_PRIORITY[b.Exchange] ?? 10;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      // Prefer primary listings
+      if (a.isPrimary && !b.isPrimary) return -1;
+      if (!a.isPrimary && b.isPrimary) return 1;
+      return 0;
+    });
+
+    return sorted.slice(0, 10);
   } catch (err) {
     console.error('[searchStocks]', err);
     return [];
@@ -519,7 +560,10 @@ export async function getStockPrice(ticker: string, exchange: string): Promise<n
     const response = await fetch(url);
     if (!response.ok) return null;
     const data = await response.json();
-    return data?.close ?? data?.previousClose ?? null;
+    const rawPrice = data?.close ?? data?.previousClose ?? null;
+    if (rawPrice === null) return null;
+    // JSE prices are in ZAC (cents) — convert to ZAR
+    return convertJsePrice(rawPrice, exchange);
   } catch {
     return null;
   }
