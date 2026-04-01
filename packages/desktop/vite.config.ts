@@ -41,6 +41,7 @@ export default defineConfig(({ mode }) => {
     // Expose the Anthropic key to the browser renderer for the proxy fallback.
     // Only set when the env var is present; never undefined in Electron (handled server-side).
     'import.meta.env.VITE_ANTHROPIC_API_KEY': JSON.stringify(env.ANTHROPIC_API_KEY ?? ''),
+    'import.meta.env.VITE_EODHD_API_KEY': JSON.stringify(env.EODHD_API_KEY ?? ''),
   },
   });
 });

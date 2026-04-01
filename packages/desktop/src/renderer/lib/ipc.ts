@@ -473,7 +473,7 @@ export async function setInvestmentStatus(id: string, status: InvestmentStatus):
 
 // ── Stock Search (EODHD) — uses Vite proxy in dev, direct in Electron ───────
 
-const EODHD_API_KEY = '69ca80bde491c3.16456760';
+const EODHD_API_KEY = (import.meta as any).env?.VITE_EODHD_API_KEY as string || '';
 
 function eodhUrl(path: string): string {
   const sep = path.includes('?') ? '&' : '?';
