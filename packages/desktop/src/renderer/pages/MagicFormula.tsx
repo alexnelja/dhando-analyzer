@@ -1,6 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { formatCompact } from '../lib/currency';
-import { listWatchlist, calculateMagicFormula, type InvestmentRow, type MagicFormulaEntry } from '../lib/ipc';
+import {
+  listWatchlist,
+  calculateMagicFormula,
+  fetchFundamentalsForMagicFormula,
+  type InvestmentRow,
+  type MagicFormulaEntry,
+} from '../lib/ipc';
 
 interface MagicFormulaInputs {
   ebit: number;
@@ -14,6 +20,7 @@ interface MagicFormulaInputs {
 interface EditableRow {
   inv: InvestmentRow;
   inputs: MagicFormulaInputs;
+  dataSource: 'manual' | 'eodhd';
 }
 
 const DEFAULT_INPUTS: MagicFormulaInputs = {
@@ -62,13 +69,15 @@ export function MagicFormula() {
   const [results, setResults] = useState<MagicFormulaEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasRun, setHasRun] = useState(false);
+  const [fetchProgress, setFetchProgress] = useState<{ current: number; total: number } | null>(null);
+  const [fetchBanner, setFetchBanner] = useState<string | null>(null);
 
   useEffect(() => {
     listWatchlist()
       .then((invs) => {
         setInvestments(invs);
         setEditableRows(
-          invs.map((inv) => ({ inv, inputs: deriveInputs(inv) })),
+          invs.map((inv) => ({ inv, inputs: deriveInputs(inv), dataSource: 'manual' as const })),
         );
       })
       .catch(console.error)
@@ -88,6 +97,67 @@ export function MagicFormula() {
     const ranked = calculateMagicFormula(payload);
     setResults(ranked);
     setHasRun(true);
+  }, [editableRows]);
+
+  const handleAutoFetch = useCallback(async () => {
+    const eligible = editableRows.filter((r) => r.inv.ticker && r.inv.exchange);
+    if (eligible.length === 0) return;
+
+    setFetchBanner(null);
+    setFetchProgress({ current: 0, total: eligible.length });
+
+    let successCount = 0;
+    const updated = new Map<string, { inputs: MagicFormulaInputs; dataSource: 'eodhd' }>();
+
+    for (let i = 0; i < eligible.length; i++) {
+      const { inv } = eligible[i];
+      setFetchProgress({ current: i + 1, total: eligible.length });
+      const result = await fetchFundamentalsForMagicFormula(inv.ticker!, inv.exchange!);
+      if (result) {
+        updated.set(inv.id, {
+          inputs: {
+            ebit: result.ebit,
+            enterpriseValue: result.enterpriseValue,
+            netWorkingCapital: result.netWorkingCapital,
+            netFixedAssets: result.netFixedAssets,
+          },
+          dataSource: 'eodhd',
+        });
+        successCount++;
+      }
+    }
+
+    setEditableRows((prev) =>
+      prev.map((r) => {
+        const patch = updated.get(r.inv.id);
+        return patch ? { ...r, inputs: patch.inputs, dataSource: patch.dataSource } : r;
+      }),
+    );
+
+    setFetchProgress(null);
+
+    if (successCount > 0) {
+      setFetchBanner(`Financials fetched for ${successCount} investment${successCount !== 1 ? 's' : ''}`);
+
+      // Auto-run rankings after fetch
+      setEditableRows((prev) => {
+        const payload = prev.map(({ inv, inputs }) => ({
+          id: inv.id,
+          name: inv.name,
+          ticker: inv.ticker,
+          ebit: inputs.ebit,
+          enterpriseValue: inputs.enterpriseValue,
+          netWorkingCapital: inputs.netWorkingCapital,
+          netFixedAssets: inputs.netFixedAssets,
+        }));
+        const ranked = calculateMagicFormula(payload);
+        setResults(ranked);
+        setHasRun(true);
+        return prev;
+      });
+    } else {
+      setFetchBanner('No financials could be fetched — check tickers and exchange codes.');
+    }
   }, [editableRows]);
 
   function updateInput(id: string, field: keyof MagicFormulaInputs, value: number) {
@@ -144,6 +214,30 @@ export function MagicFormula() {
         </div>
       ) : (
         <>
+          {/* Auto-fetch controls */}
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              onClick={handleAutoFetch}
+              disabled={fetchProgress !== null}
+              className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {fetchProgress
+                ? `Fetching ${fetchProgress.current}/${fetchProgress.total}...`
+                : 'Auto-Fetch Financials'}
+            </button>
+            {fetchBanner && (
+              <span
+                className="text-xs font-medium px-3 py-1.5 rounded-md"
+                style={{
+                  backgroundColor: fetchBanner.startsWith('No') ? 'rgba(224,82,82,0.1)' : 'rgba(120,140,93,0.12)',
+                  color: fetchBanner.startsWith('No') ? '#e05252' : '#788c5d',
+                }}
+              >
+                {fetchBanner}
+              </span>
+            )}
+          </div>
+
           <div className="bg-white rounded-xl border border-gray-200/60 overflow-hidden mb-5">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
@@ -160,6 +254,9 @@ export function MagicFormula() {
                     <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">
                       Investment
                     </th>
+                    <th className="px-4 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wide">
+                      Source
+                    </th>
                     <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">
                       EBIT
                     </th>
@@ -175,12 +272,29 @@ export function MagicFormula() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100/60">
-                  {editableRows.map(({ inv, inputs }) => (
+                  {editableRows.map(({ inv, inputs, dataSource }) => (
                     <tr key={inv.id} className="hover:bg-gray-50/60 transition-colors">
                       <td className="px-4 py-2.5">
                         <span className="font-medium text-gray-800">{inv.name}</span>
                         {inv.ticker && (
                           <span className="ml-2 font-mono text-xs text-gray-400">{inv.ticker}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        {dataSource === 'eodhd' ? (
+                          <span
+                            className="inline-block px-2 py-0.5 rounded text-xs font-medium"
+                            style={{ backgroundColor: 'rgba(120,140,93,0.12)', color: '#788c5d' }}
+                          >
+                            EODHD
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-block px-2 py-0.5 rounded text-xs font-medium"
+                            style={{ backgroundColor: '#f3f2ee', color: '#9ca3af' }}
+                          >
+                            Manual
+                          </span>
                         )}
                       </td>
                       {(['ebit', 'enterpriseValue', 'netWorkingCapital', 'netFixedAssets'] as const).map(

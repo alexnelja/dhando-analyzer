@@ -631,17 +631,121 @@ export async function getStockProfile(ticker: string, exchange: string): Promise
   }
 }
 
-export async function getStockPrice(ticker: string, exchange: string): Promise<number | null> {
+export async function getJseLivePrice(ticker: string): Promise<number | null> {
   try {
-    const url = eodhUrl(`/real-time/${ticker}.${exchange}?fmt=json`);
+    // Yahoo uses .JO suffix for JSE stocks
+    const yahooTicker = `${ticker}.JO`;
+    const url = isElectron
+      ? `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d&range=1d`
+      : `/api/yahoo/${yahooTicker}?interval=1d&range=1d`; // proxy in dev
+
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'DhandoAnalyzer/1.0' },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const meta = data?.chart?.result?.[0]?.meta;
+    const price = meta?.regularMarketPrice;
+    if (!price) return null;
+    // Yahoo returns ZAc (cents) for JSE — convert to ZAR
+    return price / 100;
+  } catch {
+    return null;
+  }
+}
+
+async function getEodPrice(ticker: string, exchange: string): Promise<number | null> {
+  try {
+    const url = eodhUrl(`/eod/${ticker}.${exchange}?fmt=json&order=d&limit=1`);
     const response = await fetch(url);
     if (!response.ok) return null;
     const data = await response.json();
+    const latest = Array.isArray(data) ? data[0] : null;
+    if (!latest) return null;
+    return convertJsePrice(latest.close ?? latest.adjusted_close, exchange);
+  } catch {
+    return null;
+  }
+}
+
+export async function getStockPrice(ticker: string, exchange: string): Promise<number | null> {
+  // For JSE stocks, use Yahoo Finance (EODHD real-time returns "NA")
+  if (['JSE', 'JO', 'XJSE'].includes(exchange)) {
+    const yahooPrice = await getJseLivePrice(ticker);
+    if (yahooPrice !== null) return yahooPrice;
+    // Fallback to EODHD EOD
+  }
+
+  try {
+    const url = eodhUrl(`/real-time/${ticker}.${exchange}?fmt=json`);
+    const response = await fetch(url);
+    if (!response.ok) {
+      // Try EOD as fallback
+      return getEodPrice(ticker, exchange);
+    }
+    const data = await response.json();
     const rawPrice = data?.close ?? data?.previousClose ?? null;
-    if (rawPrice === null) return null;
-    // JSE prices are in ZAC (cents) — convert to ZAR
+    if (rawPrice === null || rawPrice === 'NA') {
+      return getEodPrice(ticker, exchange);
+    }
     return convertJsePrice(rawPrice, exchange);
   } catch {
+    return getEodPrice(ticker, exchange);
+  }
+}
+
+export async function fetchFundamentalsForMagicFormula(
+  ticker: string,
+  exchange: string,
+): Promise<{
+  ebit: number;
+  enterpriseValue: number;
+  netWorkingCapital: number;
+  netFixedAssets: number;
+  marketCap: number;
+  revenue: number;
+} | null> {
+  try {
+    const url = eodhUrl(`/fundamentals/${ticker}.${exchange}?fmt=json`);
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+
+    const highlights = data?.Highlights ?? {};
+    const balance = data?.Financials?.Balance_Sheet?.yearly ?? {};
+    const income = data?.Financials?.Income_Statement?.yearly ?? {};
+
+    // Get latest year
+    const latestBalKey = Object.keys(balance).sort().reverse()[0];
+    const latestIncKey = Object.keys(income).sort().reverse()[0];
+    const bal = latestBalKey ? balance[latestBalKey] : {};
+    const inc = latestIncKey ? income[latestIncKey] : {};
+
+    const marketCap = parseFloat(highlights.MarketCapitalization) || 0;
+    const totalDebt = parseFloat(bal.totalLiab ?? bal.longTermDebt ?? '0') || 0;
+    const cash = parseFloat(bal.cash ?? bal.cashAndShortTermInvestments ?? '0') || 0;
+    const totalAssets = parseFloat(bal.totalAssets ?? '0') || 0;
+    const ebitda = parseFloat(inc.ebitda ?? '0') || 0;
+    const revenue = parseFloat(inc.totalRevenue ?? '0') || 0;
+
+    // For JSE stocks, values might be in ZAC — convert
+    const isJse = ['JSE', 'JO', 'XJSE'].includes(exchange);
+    const divisor = isJse ? 100 : 1;
+
+    const enterpriseValue = (marketCap + totalDebt - cash) / divisor;
+    const netWorkingCapital = (totalAssets * 0.4 - totalDebt * 0.3) / divisor;
+    const netFixedAssets = (totalAssets * 0.6) / divisor;
+
+    return {
+      ebit: ebitda / divisor, // EBITDA as EBIT proxy
+      enterpriseValue,
+      netWorkingCapital: Math.max(netWorkingCapital, 1), // prevent negative/zero
+      netFixedAssets: Math.max(netFixedAssets, 1),
+      marketCap: marketCap / divisor,
+      revenue: revenue / divisor,
+    };
+  } catch (err) {
+    console.error('[fetchFundamentals]', err);
     return null;
   }
 }
