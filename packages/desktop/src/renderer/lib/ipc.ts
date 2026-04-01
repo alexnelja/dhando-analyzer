@@ -510,32 +510,109 @@ export function convertJsePrice(price: number, exchange: string): number {
   return price;
 }
 
+// ── JSE local stock cache ──────────────────────────────────────────────────
+let jseStockCache: StockSearchResult[] | null = null;
+let jseLoadingPromise: Promise<void> | null = null;
+
+async function loadJseStocks(): Promise<StockSearchResult[]> {
+  if (jseStockCache) return jseStockCache;
+  if (jseLoadingPromise) { await jseLoadingPromise; return jseStockCache ?? []; }
+
+  jseLoadingPromise = (async () => {
+    try {
+      // Check localStorage cache first (valid for 24h)
+      const cached = localStorage.getItem('dhando_jse_stocks');
+      const cachedAt = localStorage.getItem('dhando_jse_stocks_at');
+      if (cached && cachedAt && Date.now() - parseInt(cachedAt) < 24 * 60 * 60 * 1000) {
+        jseStockCache = JSON.parse(cached);
+        return;
+      }
+
+      const url = eodhUrl(`/exchange-symbol-list/JSE?fmt=json`);
+      const response = await fetch(url);
+      if (!response.ok) { jseStockCache = []; return; }
+      const data = await response.json();
+      if (!Array.isArray(data)) { jseStockCache = []; return; }
+
+      jseStockCache = data
+        .filter((s: any) => s.Type === 'Common Stock' || s.Type === 'ETF')
+        .map((s: any) => ({
+          Code: s.Code,
+          Exchange: 'JSE',
+          Name: s.Name ?? '',
+          Type: s.Type ?? 'Common Stock',
+          Country: s.Country ?? 'South Africa',
+          Currency: s.Currency ?? 'ZAC',
+          ISIN: s.Isin ?? '',
+          isPrimary: true,
+          previousClose: s.previousClose,
+        }));
+
+      // Cache to localStorage
+      localStorage.setItem('dhando_jse_stocks', JSON.stringify(jseStockCache));
+      localStorage.setItem('dhando_jse_stocks_at', String(Date.now()));
+    } catch (err) {
+      console.error('[loadJseStocks]', err);
+      jseStockCache = [];
+    }
+  })();
+
+  await jseLoadingPromise;
+  return jseStockCache ?? [];
+}
+
+function searchJseLocal(query: string, stocks: StockSearchResult[]): StockSearchResult[] {
+  const q = query.toLowerCase();
+  return stocks.filter(s =>
+    s.Name.toLowerCase().includes(q) ||
+    s.Code.toLowerCase().includes(q)
+  ).slice(0, 10);
+}
+
 export async function searchStocks(query: string): Promise<StockSearchResult[]> {
   if (!query || query.length < 2) return [];
-  try {
-    // Search with higher limit to find JSE results
-    const url = eodhUrl(`/search/${encodeURIComponent(query)}?fmt=json&limit=25`);
-    const response = await fetch(url);
-    if (!response.ok) return [];
-    const data = await response.json();
-    if (!Array.isArray(data)) return [];
 
-    // Sort: JSE first, then by exchange priority, then primary listings first
-    const sorted = data.sort((a: StockSearchResult, b: StockSearchResult) => {
-      const aPriority = EXCHANGE_PRIORITY[a.Exchange] ?? 10;
-      const bPriority = EXCHANGE_PRIORITY[b.Exchange] ?? 10;
-      if (aPriority !== bPriority) return aPriority - bPriority;
-      // Prefer primary listings
-      if (a.isPrimary && !b.isPrimary) return -1;
-      if (!a.isPrimary && b.isPrimary) return 1;
-      return 0;
-    });
+  // Search JSE locally AND EODHD global in parallel
+  const [jseStocks, globalResults] = await Promise.all([
+    loadJseStocks().then(stocks => searchJseLocal(query, stocks)),
+    (async () => {
+      try {
+        const url = eodhUrl(`/search/${encodeURIComponent(query)}?fmt=json&limit=15`);
+        const response = await fetch(url);
+        if (!response.ok) return [];
+        const data = await response.json();
+        return Array.isArray(data) ? data as StockSearchResult[] : [];
+      } catch (err) {
+        console.error('[searchStocks global]', err);
+        return [];
+      }
+    })(),
+  ]);
 
-    return sorted.slice(0, 10);
-  } catch (err) {
-    console.error('[searchStocks]', err);
-    return [];
+  // Combine: JSE first, then global (dedup by Code+Exchange)
+  const seen = new Set<string>();
+  const combined: StockSearchResult[] = [];
+
+  for (const s of jseStocks) {
+    const key = `${s.Code}:${s.Exchange}`;
+    if (!seen.has(key)) { seen.add(key); combined.push(s); }
   }
+  for (const s of globalResults) {
+    const key = `${s.Code}:${s.Exchange}`;
+    if (!seen.has(key)) { seen.add(key); combined.push(s); }
+  }
+
+  // Sort: JSE first, then by exchange priority
+  combined.sort((a, b) => {
+    const aPriority = EXCHANGE_PRIORITY[a.Exchange] ?? 10;
+    const bPriority = EXCHANGE_PRIORITY[b.Exchange] ?? 10;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    if (a.isPrimary && !b.isPrimary) return -1;
+    if (!a.isPrimary && b.isPrimary) return 1;
+    return 0;
+  });
+
+  return combined.slice(0, 12);
 }
 
 export async function getStockProfile(ticker: string, exchange: string): Promise<{ sector: string; industry: string; price: number } | null> {
