@@ -887,3 +887,181 @@ export function calculateMagicFormula(
   // Sort by combined rank ascending (best first)
   return entries.sort((a, b) => a.combinedRank - b.combinedRank);
 }
+
+// ── Claude AI (LLM-powered game theory) ──────────────────────────────────────
+
+export interface AiStakeholder {
+  name: string;
+  position: number;
+  salience: number;
+  power: number;
+  reasoning: string;
+}
+
+export interface AiScenarioAnalysis {
+  stakeholders: AiStakeholder[];
+  analysis: string;
+}
+
+export interface AiDebateRound {
+  speaker: string;
+  argument: string;
+  movesPosition?: { from: number; to: number };
+}
+
+export interface AiDebateResult {
+  rounds: AiDebateRound[];
+  conclusion: string;
+}
+
+// The Anthropic key is read from env at build time for the browser fallback.
+// In Electron, it is read server-side in the main process (never exposed to renderer).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ANTHROPIC_KEY = (import.meta as any).env?.VITE_ANTHROPIC_API_KEY as string | undefined;
+
+async function claudeBrowserChat(
+  systemPrompt: string,
+  userMsg: string,
+): Promise<string> {
+  const key = ANTHROPIC_KEY;
+  if (!key) throw new Error('VITE_ANTHROPIC_API_KEY not set for browser mode');
+
+  const response = await fetch('/api/claude/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMsg }],
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Claude API error: ${response.status} — ${err}`);
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text ?? '';
+}
+
+function extractJsonFromText(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const raw = fenced ? fenced[1].trim() : text;
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in Claude response');
+  return JSON.parse(jsonMatch[0]);
+}
+
+const SCENARIO_SYSTEM = `You are an expert in game theory and political/economic analysis, specifically Bruce Bueno de Mesquita's Expected Utility Model from "The Predictioneer's Game."
+
+Your task: Given a scenario, identify the key stakeholders and estimate their:
+- Position (0-100): What outcome do they want? 0 = completely against, 100 = completely in favor
+- Salience (0-100): How much do they care about this issue? 0 = indifferent, 100 = top priority
+- Power (0-100): How much influence can they exert? 0 = no power, 100 = dominant
+
+Focus on South African political economy, SARB, government, business, labor, and international actors where relevant.
+
+IMPORTANT: Respond ONLY in valid JSON format:
+{
+  "stakeholders": [
+    { "name": "...", "position": 0-100, "salience": 0-100, "power": 0-100, "reasoning": "..." }
+  ],
+  "analysis": "Brief analysis of the scenario dynamics and key tensions"
+}`;
+
+const DEBATE_SYSTEM = `You are simulating a negotiation/debate between stakeholders on a political/economic scenario, following Mesquita's game theory principles.
+
+Simulate 3-4 rounds of negotiation. In each round:
+1. The most powerful stakeholder states their position
+2. Other stakeholders respond with counter-arguments
+3. Some stakeholders shift their positions based on the arguments
+
+Respond in JSON:
+{
+  "rounds": [
+    { "speaker": "stakeholder name", "argument": "their argument", "movesPosition": { "from": 60, "to": 65 } }
+  ],
+  "conclusion": "Summary of where things are likely to land and why"
+}`;
+
+const INVESTMENT_SYSTEM = `You are an investment analyst who uses game theory predictions to assess investment implications. Be specific about which SA companies/sectors would be affected and how. Be concise but actionable.`;
+
+/**
+ * Ask Claude to identify stakeholders and their game theory parameters for a scenario.
+ * Works in both Electron (IPC → main process) and browser (Vite proxy).
+ */
+export async function aiAnalyzeScenario(
+  scenario: string,
+  context?: string,
+): Promise<AiScenarioAnalysis> {
+  if (isElectron) {
+    return (window as any).dhando.claude.analyzeScenario(scenario, context) as Promise<AiScenarioAnalysis>;
+  }
+  const userMsg = context
+    ? `Scenario: ${scenario}\n\nAdditional context: ${context}`
+    : `Scenario: ${scenario}`;
+  const text = await claudeBrowserChat(SCENARIO_SYSTEM, userMsg);
+  return extractJsonFromText(text) as AiScenarioAnalysis;
+}
+
+/**
+ * Ask Claude to produce investment implications from a completed game theory prediction.
+ * Returns prose text.
+ */
+export async function aiAnalyzeResult(
+  scenario: string,
+  result: {
+    predictedOutcome: number;
+    probability: number;
+    confidence: number;
+    stakeholderInfluence: { name: string; influence: number }[];
+  },
+): Promise<string> {
+  if (isElectron) {
+    return (window as any).dhando.claude.analyzeResult(scenario, result) as Promise<string>;
+  }
+  const topStakeholders = result.stakeholderInfluence
+    .slice(0, 3)
+    .map((s) => `${s.name} (${(s.influence * 100).toFixed(0)}%)`)
+    .join(', ');
+
+  const userMsg = `Scenario: ${scenario}
+
+Game Theory Prediction Result:
+- Predicted Outcome: ${result.predictedOutcome}/100 (${result.probability > 0.5 ? 'likely to happen' : 'unlikely'})
+- Probability: ${(result.probability * 100).toFixed(1)}%
+- Model Confidence: ${(result.confidence * 100).toFixed(0)}%
+- Most Influential Stakeholders: ${topStakeholders}
+
+What are the investment implications for a South African value investor? Which JSE sectors/stocks would benefit or suffer? How should this affect portfolio positioning?`;
+
+  return claudeBrowserChat(INVESTMENT_SYSTEM, userMsg);
+}
+
+/**
+ * Ask Claude to simulate a structured negotiation debate between stakeholders.
+ */
+export async function aiDebate(
+  scenario: string,
+  stakeholders: { name: string; position: number; salience: number; power: number }[],
+): Promise<AiDebateResult> {
+  if (isElectron) {
+    return (window as any).dhando.claude.debate(scenario, stakeholders) as Promise<AiDebateResult>;
+  }
+  const stakeholderList = stakeholders
+    .map(
+      (s) =>
+        `- ${s.name}: Position ${s.position}/100, Salience ${s.salience}/100, Power ${s.power}/100`,
+    )
+    .join('\n');
+  const userMsg = `Scenario: ${scenario}\n\nStakeholders:\n${stakeholderList}\n\nSimulate the negotiation.`;
+  const text = await claudeBrowserChat(DEBATE_SYSTEM, userMsg);
+  return extractJsonFromText(text) as AiDebateResult;
+}

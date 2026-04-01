@@ -37,6 +37,38 @@ interface DhandoApi {
   privateMarkets: {
     analyze: (input: unknown) => Promise<unknown>;
   };
+
+  macro: {
+    vix: () => Promise<unknown>;
+    creditSpread: () => Promise<unknown>;
+    yieldCurve: () => Promise<unknown>;
+    fedRate: () => Promise<unknown>;
+    sentiment: () => Promise<unknown>;
+    saRepo: () => Promise<unknown>;
+    zarUsd: () => Promise<unknown>;
+  };
+
+  stock: {
+    insiders: (symbol: string) => Promise<unknown>;
+    recommendations: (symbol: string) => Promise<unknown>;
+  };
+
+  claude: {
+    analyzeScenario: (scenario: string, context?: string) => Promise<{
+      stakeholders: { name: string; position: number; salience: number; power: number; reasoning: string }[];
+      analysis: string;
+    }>;
+    analyzeResult: (scenario: string, result: {
+      predictedOutcome: number;
+      probability: number;
+      confidence: number;
+      stakeholderInfluence: { name: string; influence: number }[];
+    }) => Promise<string>;
+    debate: (scenario: string, stakeholders: { name: string; position: number; salience: number; power: number }[]) => Promise<{
+      rounds: { speaker: string; argument: string; movesPosition?: { from: number; to: number } }[];
+      conclusion: string;
+    }>;
+  };
 }
 
 interface Window {

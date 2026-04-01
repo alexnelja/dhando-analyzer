@@ -1,7 +1,9 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  return defineConfig({
   plugins: [react()],
   base: './',
   root: 'src/renderer',
@@ -28,6 +30,17 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/polymarket/, ''),
       },
+      '/api/claude': {
+        target: 'https://api.anthropic.com/v1',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/claude/, ''),
+      },
     },
   },
+  define: {
+    // Expose the Anthropic key to the browser renderer for the proxy fallback.
+    // Only set when the env var is present; never undefined in Electron (handled server-side).
+    'import.meta.env.VITE_ANTHROPIC_API_KEY': JSON.stringify(env.ANTHROPIC_API_KEY ?? ''),
+  },
+  });
 });

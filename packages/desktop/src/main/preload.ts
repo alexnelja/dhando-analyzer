@@ -55,4 +55,13 @@ contextBridge.exposeInMainWorld('dhando', {
     insiders: (symbol: string) => ipcRenderer.invoke('dhando:stock:insiders', symbol),
     recommendations: (symbol: string) => ipcRenderer.invoke('dhando:stock:recommendations', symbol),
   },
+
+  claude: {
+    analyzeScenario: (scenario: string, context?: string) =>
+      ipcRenderer.invoke('dhando:claude:analyze-scenario', scenario, context),
+    analyzeResult: (scenario: string, result: unknown) =>
+      ipcRenderer.invoke('dhando:claude:analyze-result', scenario, result),
+    debate: (scenario: string, stakeholders: unknown) =>
+      ipcRenderer.invoke('dhando:claude:debate', scenario, stakeholders),
+  },
 });

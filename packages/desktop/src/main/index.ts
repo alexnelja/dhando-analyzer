@@ -25,6 +25,7 @@ import { analyzePrivateMarket } from '@dhando/core';
 import { runDealAnalyzer } from '@dhando/core';
 import { createFredClient } from '@dhando/core';
 import { createFinnhubClient } from '@dhando/core';
+import { createClaudeClient } from '@dhando/core';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -41,6 +42,11 @@ function getDb() {
 // Macro data clients — keys are optional; handlers return empty arrays when absent.
 const fredClient = createFredClient(process.env.FRED_API_KEY ?? '');
 const finnhubClient = createFinnhubClient(process.env.FINNHUB_API_KEY ?? '');
+
+// Claude client — null when ANTHROPIC_API_KEY is not set.
+const claudeClient = process.env.ANTHROPIC_API_KEY
+  ? createClaudeClient(process.env.ANTHROPIC_API_KEY)
+  : null;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -202,4 +208,28 @@ function registerIpcHandlers() {
   ipcMain.handle('dhando:stock:recommendations', (_event, symbol: string) =>
     finnhubClient.getRecommendations(symbol),
   );
+
+  // ── Claude AI ─────────────────────────────────────────────────────────────
+  ipcMain.handle('dhando:claude:analyze-scenario', async (_e, scenario: string, context?: string) => {
+    if (!claudeClient) throw new Error('ANTHROPIC_API_KEY not configured');
+    return claudeClient.analyzeScenario(scenario, context);
+  });
+
+  ipcMain.handle('dhando:claude:analyze-result', async (
+    _e,
+    scenario: string,
+    result: { predictedOutcome: number; probability: number; confidence: number; stakeholderInfluence: { name: string; influence: number }[] },
+  ) => {
+    if (!claudeClient) throw new Error('ANTHROPIC_API_KEY not configured');
+    return claudeClient.analyzeResult(scenario, result);
+  });
+
+  ipcMain.handle('dhando:claude:debate', async (
+    _e,
+    scenario: string,
+    stakeholders: { name: string; position: number; salience: number; power: number }[],
+  ) => {
+    if (!claudeClient) throw new Error('ANTHROPIC_API_KEY not configured');
+    return claudeClient.debate(scenario, stakeholders);
+  });
 }
