@@ -18,4 +18,5 @@ export * from './portfolio/index.js';
 export * from './distress/index.js';
 export * from './private-markets/index.js';
 export * from './api/polymarket.js';
+export * from './api/claude.js';
 export * from './game-theory/index.js';
