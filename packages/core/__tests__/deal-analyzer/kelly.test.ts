@@ -2,44 +2,36 @@ import { describe, it, expect } from 'vitest';
 import { calculateKelly, portfolioKelly, type KellyInput } from '../../src/deal-analyzer/kelly.js';
 
 // ---------------------------------------------------------------------------
-// Reference fixtures — hand-verified.
+// Reference fixtures — hand-verified using investment-form Kelly.
+//
+// Investment Kelly: f* = (W*b - q) / b   where b = B/A, q = 1-W
 //
 // Standard case: W=0.6, A=0.20 (loss), B=0.50 (gain)
-//   f* = 0.6/0.20 - 0.4/0.50 = 3.0 - 0.80 = 2.20 → clamped to 1.0
+//   b = 0.50/0.20 = 2.5
+//   f* = (0.6*2.5 - 0.4) / 2.5 = (1.5 - 0.4) / 2.5 = 0.44
+//   halfKelly = 0.22
 //
-// Typical case: W=0.55, A=0.15, B=0.30
-//   f* = 0.55/0.15 - 0.45/0.30 = 3.6667 - 1.5 = 2.1667 → clamped to 1.0
-//   halfKelly = 0.5
-//
-// Tight case: W=0.55, A=0.25, B=0.40
-//   f* = 0.55/0.25 - 0.45/0.40 = 2.20 - 1.125 = 1.075 → clamped to 1.0
-//   halfKelly = 0.5
+// Small edge: W=0.45, A=0.20, B=0.30
+//   b = 0.30/0.20 = 1.5
+//   f* = (0.45*1.5 - 0.55) / 1.5 = (0.675 - 0.55) / 1.5 = 0.0833
+//   halfKelly = 0.0417
 //
 // No-edge case: W=0.20, A=0.30, B=0.40
 //   break-even W_be = 0.30/(0.30+0.40) = 0.4286; W=0.20 < 0.4286 → f*=0
 //
 // Balanced: W=0.50, A=0.20, B=0.20
-//   f* = 0.50/0.20 - 0.50/0.20 = 0 → no edge
-//
-// Realistic: W=0.60, A=0.10, B=0.25
-//   f* = 0.60/0.10 - 0.40/0.25 = 6 - 1.6 = 4.4 → clamped to 1.0
-//   halfKelly = 0.5
-//
-// Small edge: W=0.45, A=0.20, B=0.30
-//   W_be = 0.20/(0.20+0.30) = 0.40; W=0.45 > 0.40 → has edge
-//   f* = 0.45/0.20 - 0.55/0.30 = 2.25 - 1.8333 = 0.4167
-//   halfKelly = 0.2083
+//   b = 1.0; f* = (0.50 - 0.50) / 1.0 = 0 → no edge
 // ---------------------------------------------------------------------------
 
 describe('calculateKelly — standard case (W=0.6, A=0.20, B=0.50)', () => {
   const input: KellyInput = { winProbability: 0.6, gainFraction: 0.5, lossFraction: 0.2 };
 
-  it('fullKelly is clamped to 1.0 when raw f* > 1', () => {
-    expect(calculateKelly(input).fullKelly).toBe(1.0);
+  it('fullKelly ≈ 0.44', () => {
+    expect(calculateKelly(input).fullKelly).toBeCloseTo(0.44, 2);
   });
 
-  it('halfKelly is 0.5', () => {
-    expect(calculateKelly(input).halfKelly).toBeCloseTo(0.5, 6);
+  it('halfKelly ≈ 0.22', () => {
+    expect(calculateKelly(input).halfKelly).toBeCloseTo(0.22, 2);
   });
 
   it('hasEdge is true', () => {
@@ -54,12 +46,12 @@ describe('calculateKelly — standard case (W=0.6, A=0.20, B=0.50)', () => {
 describe('calculateKelly — small positive edge (W=0.45, A=0.20, B=0.30)', () => {
   const input: KellyInput = { winProbability: 0.45, gainFraction: 0.30, lossFraction: 0.20 };
 
-  it('fullKelly ≈ 0.4167', () => {
-    expect(calculateKelly(input).fullKelly).toBeCloseTo(0.4167, 3);
+  it('fullKelly ≈ 0.0833', () => {
+    expect(calculateKelly(input).fullKelly).toBeCloseTo(0.0833, 3);
   });
 
-  it('halfKelly ≈ 0.2083', () => {
-    expect(calculateKelly(input).halfKelly).toBeCloseTo(0.2083, 3);
+  it('halfKelly ≈ 0.0417', () => {
+    expect(calculateKelly(input).halfKelly).toBeCloseTo(0.0417, 3);
   });
 
   it('hasEdge is true', () => {

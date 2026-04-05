@@ -62,7 +62,12 @@ export function calculateKelly(input: KellyInput, dataStalenessHours?: number): 
   // No edge when win probability is below the break-even threshold.
   const hasEdge = W > A / (A + B);
 
-  const rawKelly = W / A - (1 - W) / B;
+  // Investment-form Kelly: f* = (p*b - q) / b
+  // where b = gain/loss odds ratio, p = win prob, q = lose prob
+  // This produces values in [0, 1] range naturally for typical investments,
+  // unlike the gambling form W/A - (1-W)/B which often exceeds 1.0.
+  const b = B / A; // odds ratio
+  const rawKelly = (W * b - (1 - W)) / b;
   const fullKelly = Math.min(Math.max(rawKelly, 0), 1);
 
   const stalePenalty = (dataStalenessHours ?? 0) > 72;
