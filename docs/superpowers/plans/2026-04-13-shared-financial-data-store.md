@@ -308,6 +308,19 @@ describe('calculateAltmanZFromFinancials', () => {
     expect((r as any).status).toBe('insufficient');
     expect((r as any).missingFields).toContain('marketCap');
   });
+  it('insufficient when ebit AND ebitda both null (no fallback path)', () => {
+    const r = calculateAltmanZFromFinancials(f({ ebit: null, ebitda: null }), { marketCap: 4e6 });
+    expect((r as any).status).toBe('insufficient');
+    expect((r as any).missingFields).toContain('ebit');
+  });
+  it('insufficient lists ALL missing fields, not just first', () => {
+    const r = calculateAltmanZFromFinancials(
+      f({ retainedEarnings: null, totalLiabilities: null }),
+      { marketCap: null },
+    );
+    const missing = (r as any).missingFields as string[];
+    expect(missing).toEqual(expect.arrayContaining(['retainedEarnings', 'totalLiabilities', 'marketCap']));
+  });
 });
 ```
 
@@ -332,7 +345,12 @@ git commit -m "feat(core): altman-z adapter accepting Financial + marketCap"
 - Modify: `packages/core/src/scoring/piotroski-f.ts`
 - Test: `packages/core/src/scoring/__tests__/piotroski-f-from-financials.test.ts`
 
-- [ ] **Step 1: Write failing test** — same pattern as Task 3. Two `Financial` args (current, prior). Tests: full-data happy path, missing `cashFromOps` returns insufficient, missing prior returns insufficient.
+- [ ] **Step 1: Write failing test** — same pattern as Task 3. Two `Financial` args (current, prior). Required cases:
+  - Full-data happy path returns `{ score: 0..9, criteria: {...} }`.
+  - `current.cashFromOps === null` → `insufficient`, `missingFields` includes `cashFromOps`.
+  - `prior === null` → `insufficient`, `missingFields` includes `prior`.
+  - `current.grossProfit === null && prior.grossProfit !== null` → `insufficient` listing the current-year missing field with explicit name `current.grossProfit`.
+  - All-fields-present + ebit fallback (`ebitda - depreciation`) → score still computes.
 
 - [ ] **Step 2: Run, expect FAIL.**
 
@@ -354,7 +372,7 @@ git commit -am "feat(core): piotroski-f adapter accepting current+prior Financia
 - Modify: `packages/core/src/scoring/beneish-m.ts`
 - Test: `packages/core/src/scoring/__tests__/beneish-m-from-financials.test.ts`
 
-- [ ] Steps 1–5: same TDD pattern. Adapter takes `(current, prior)`. Computes 8 ratios (DSRI, GMI, AQI, SGI, DEPI, SGAI, LVGI, TATA) from raw fields. TATA = `(netIncome - cashFromOps) / totalAssets`.
+- [ ] Steps 1–5: same TDD pattern. Adapter takes `(current, prior)`. Computes 8 ratios (DSRI, GMI, AQI, SGI, DEPI, SGAI, LVGI, TATA) from raw fields. TATA = `(netIncome - cashFromOps) / totalAssets`. Required negative cases: `receivables` null → insufficient; `prior` null → insufficient; `ppe` null on either year → insufficient (AQI requires both years).
 
 ```bash
 git commit -am "feat(core): beneish-m adapter accepting current+prior Financial"
@@ -392,11 +410,7 @@ git commit -m "feat(core): EODHD fundamentals → Financial mapper"
 - Create: `packages/core/src/api/claude-extractor.ts`
 - Test: `packages/core/src/api/__tests__/claude-extractor.test.ts`
 
-- [ ] **Step 0: Add Zod dependency**
-
-```bash
-cd packages/core && pnpm add zod
-```
+> Note: `zod` is already a dependency of `@dhando/core` — no install step needed.
 
 - [ ] **Step 1: Write the schema** in `claude-extractor-schema.ts` exactly as in spec §5.2.
 
@@ -515,7 +529,7 @@ git commit -am "feat(desktop): financials IPC handlers + preload bridge + change
 **Files:**
 - Modify: `packages/desktop/src/renderer/lib/ipc.ts`
 
-- [ ] **Step 1:** Delete `StoredFinancials` interface, `browserFinancials` array, and the `loadFromStorage('dhando_financials', …)` line. Replace `saveFinancials`/`getFinancials` bodies with direct IPC calls:
+- [ ] **Step 1:** Delete `StoredFinancials` interface (`ipc.ts:117–130`), the `browserFinancials` module-level array (`ipc.ts:136`), and the `loadFromStorage('dhando_financials', …)` line. Add `export type { Financial } from '@dhando/core';` near the top of the file so renderer pages get the canonical type. Replace `saveFinancials`/`getFinancials` bodies with direct IPC calls:
 
 ```ts
 export async function saveFinancials(financial: Financial): Promise<void> {
@@ -550,12 +564,15 @@ git commit -am "refactor(desktop): renderer ipc.ts uses real financials IPC, dro
 - Create: `packages/desktop/src/renderer/hooks/useFinancials.ts`
 - Test: `packages/desktop/src/renderer/hooks/__tests__/useFinancials.test.tsx`
 
-- [ ] **Step 1: Write failing test** — `@testing-library/react`. Mock `window.dhando.financials.get` + `onChanged`. Cases:
-  - Initial load returns `{ status: 'loaded', current, prior, missingFields: [] }` when 2 rows exist.
-  - `missing` when 0 rows.
-  - `incomplete` when 1 row but Altman/Piotroski/Beneish all need 2.
-  - Hook re-fetches when `onChanged` fires with matching investmentId.
-  - Hook ignores `onChanged` for other investmentIds.
+> Note: `packages/desktop` has no test runner currently. Rather than add `vitest` + `@testing-library/react` (a chunky toolchain commitment for a single hook), test the hook's logic by **extracting it into a pure function** `computeFinancialsState(rows: Financial[]): { current, prior, status, missingFields }` in `useFinancials.ts` and unit-test that in `@dhando/core`'s existing vitest setup. The React `useEffect`/subscription wiring stays untested at unit level (covered by manual smoke in Task 13). Move the test file to `packages/core/src/services/__tests__/financials-state.test.ts`.
+
+- [ ] **Step 1: Write failing test** for `computeFinancialsState` — pure function, no React. Cases:
+  - 2 rows present, all required fields populated → `loaded`.
+  - 0 rows → `missing`.
+  - 1 row → `incomplete` (Piotroski/Beneish need 2 years).
+  - 2 rows but `current.cashFromOps == null` → `incomplete` with `missingFields: ['current.cashFromOps']`.
+
+The `useFinancials` React hook itself is then a thin wrapper: `const [rows, setRows] = useState`, `useEffect` to fetch + subscribe to `onChanged`, return `{ ...computeFinancialsState(rows), refetch }`. Wiring is verified by manual smoke test in Task 13.
 
 - [ ] **Step 2: Run, expect FAIL.**
 
@@ -644,7 +661,22 @@ git commit -am "refactor(desktop): <PageName> reads from shared financials store
 - Modify: `packages/desktop/src/main/index.ts` (`dhando:watchlist:add` handler)
 - Modify: `packages/desktop/src/renderer/pages/Watchlist.tsx`
 
-- [ ] **Step 1:** In the existing `dhando:watchlist:add` handler, after the row is saved, fire-and-forget call `pullAndSave(db, …, ticker, 2)` if a ticker is present. Wrap in try/catch — failure sets `needsManualFinancials = true` (already done by the service).
+- [ ] **Step 1:** In the existing `dhando:watchlist:add` handler, after the row is saved and *before* returning the new id, kick off `pullAndSave(db, eodhdFn, id, ticker, 2).catch(...)` (do not await — handler should return immediately so UI doesn't block). Wrap explicitly:
+
+```ts
+if (ticker) {
+  pullAndSave(getDb(), pullFn, newId, ticker, 2)
+    .then(() => emitChanged(newId))
+    .catch((err) => {
+      console.error('[watchlist:add] EODHD pull failed', { ticker, err: err.message });
+      // Service should already mark needsManualFinancials; belt-and-braces:
+      getDb().run(`UPDATE investments SET needs_manual_financials = 1 WHERE id = ?`, newId);
+      emitChanged(newId);
+    });
+}
+```
+
+Confirms the spec rule that EODHD failure flips `needsManualFinancials` and the renderer hears about it via `changed`.
 
 - [ ] **Step 2:** In `Watchlist.tsx`, when `row.needsManualFinancials` is true, render a yellow banner inside the row: "Financials not available from EODHD — [Enter manually] [Try Claude extract]". Both buttons navigate to `/financials/<id>`.
 
