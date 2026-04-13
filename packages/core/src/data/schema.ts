@@ -22,6 +22,10 @@ export const investments = sqliteTable('investments', {
   userId: text('user_id').notNull().default('solo-investor'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+
+  // Auto-compute eligibility
+  marketCap: real('market_cap'),
+  needsManualFinancials: integer('needs_manual_financials', { mode: 'boolean' }).default(false),
 });
 
 /**
@@ -48,6 +52,25 @@ export const financials = sqliteTable('financials', {
   autoUpdated: integer('auto_updated', { mode: 'boolean' }).default(false),
   lastRefresh: text('last_refresh'),
   apiSource: text('api_source'),
+
+  // Extended fields for Altman-Z / Piotroski-F / Beneish-M auto-computation
+  retainedEarnings: real('retained_earnings'),
+  ebit: real('ebit'),
+  totalLiabilities: real('total_liabilities'),
+  longTermDebt: real('long_term_debt'),
+  currentAssets: real('current_assets'),
+  currentLiabilities: real('current_liabilities'),
+  sharesOutstanding: real('shares_outstanding'),
+  grossProfit: real('gross_profit'),
+  receivables: real('receivables'),
+  ppe: real('ppe'),
+  depreciation: real('depreciation'),
+  sga: real('sga'),
+  cashFromOps: real('cash_from_ops'),
+
+  // Source-tracking columns
+  apiValuesJson: text('api_values_json'),
+  overriddenFields: text('overridden_fields'),
 });
 
 /**

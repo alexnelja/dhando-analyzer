@@ -56,4 +56,17 @@ export interface Investment {
   userId: string;
   createdAt: Date;
   updatedAt: Date;
+
+  // --- Auto-compute eligibility ---
+  /**
+   * Latest market capitalisation in the investment's reporting currency.
+   * Used as the denominator for Altman-Z market-value-of-equity ratio.
+   * `null` for private equity and other non-listed instruments.
+   */
+  marketCap: number | null;
+  /**
+   * When `true`, the automated financial-data pipeline cannot source data for
+   * this investment and every financial field must be entered by the user.
+   */
+  needsManualFinancials: boolean;
 }
