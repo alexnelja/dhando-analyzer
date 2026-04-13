@@ -31,18 +31,52 @@ Renderer pages (Distress, Screener, DealAnalyzer, …)
 preload.ts  — new `financials` namespace
         │ ipcMain.handle
 main/index.ts — new handlers:
-        dhando:financials:{get,save,list,pull,reconcile}
-        dhando:claude:extract-financials
+        dhando:financials:{get,save,list,pull,extractFromText}
         │
 core/data/financials-repo.ts      (new — CRUD, 2-year fetch, source tracking)
 core/api/eodhd-statements.ts      (new — public-markets puller)
 core/api/claude-extractor.ts      (new — PDF/text fallback)
-core/scoring/{altman,piotroski,beneish}.ts   (refactored: accept Financial[])
+core/scoring/{altman,piotroski,beneish}.ts   (extended: new `*FromFinancials` adapters)
 ```
+
+### 3.1 Preload bridge additions
+
+Add to `packages/desktop/src/main/preload.ts` inside the existing `contextBridge.exposeInMainWorld('dhando', { ... })` object:
+
+```ts
+financials: {
+  get: (investmentId: string) =>
+    ipcRenderer.invoke('dhando:financials:get', investmentId),
+  save: (financial: unknown) =>
+    ipcRenderer.invoke('dhando:financials:save', financial),
+  list: () =>
+    ipcRenderer.invoke('dhando:financials:list'),
+  pull: (investmentId: string, ticker: string, years?: number) =>
+    ipcRenderer.invoke('dhando:financials:pull', investmentId, ticker, years),
+  extractFromText: (investmentId: string, text: string) =>
+    ipcRenderer.invoke('dhando:financials:extractFromText', investmentId, text),
+  onChanged: (cb: (investmentId: string) => void) => {
+    const listener = (_e: unknown, id: string) => cb(id);
+    ipcRenderer.on('dhando:financials:changed', listener);
+    return () => ipcRenderer.removeListener('dhando:financials:changed', listener);
+  },
+},
+```
+
+The `onChanged` subscription is the hook-invalidation mechanism (§6.6). Main emits `dhando:financials:changed` to all windows after every successful `save`/`pull`/`extractFromText`.
 
 New packages touched: `core` (schema migration, repo, API clients, score signatures), `desktop/main` (handlers), `desktop/preload` (bridge), `desktop/renderer` (wire pages, drop local form state).
 
 ## 4. Data Model
+
+### 4.0 Two existing types, one canonical going forward
+
+Two types currently represent financials and must be reconciled:
+
+- `Financial` in `packages/core/src/models/financial.ts` — canonical core type, 20 fields, nullable semantics, matches SQLite schema.
+- `StoredFinancials` in `packages/desktop/src/renderer/lib/ipc.ts:117` — renderer-only shape with 10 required (non-nullable) fields, used by the localStorage browser fallback.
+
+**Decision:** `Financial` is the canonical type after this spec. `StoredFinancials` is deleted. The browser-mode localStorage fallback is dropped along with it (Alex mandates Electron-only per memory `feedback_electron_mode.md`). Renderer IPC returns/accepts `Financial` rows directly. Any nullable-field handling in the UI is explicit (badges, "—" placeholders).
 
 ### 4.1 `Financial` — 13 new nullable fields
 
@@ -75,7 +109,21 @@ Two new source-tracking fields:
 
 ### 4.3 Migration
 
-`ALTER TABLE financials ADD COLUMN …` for each of the 13 + 2 source-tracking fields. `ALTER TABLE investments ADD COLUMN market_cap`. All nullable. No data loss. No production users so no backfill script.
+Existing migration style is hand-rolled SQL inside `packages/core/src/data/db.ts` (see header comment "Using raw SQL for table creation rather than drizzle-kit push"). We follow the same pattern — no drizzle-kit introduction in this spec.
+
+Add to `db.ts` after existing `CREATE TABLE` statements, inside the same init function, using `ALTER TABLE … ADD COLUMN` wrapped in a try/catch per column so repeated launches are idempotent (SQLite has no `IF NOT EXISTS` for columns):
+
+```
+financials: retained_earnings, ebit, total_liabilities, long_term_debt,
+  current_assets, current_liabilities, shares_outstanding, gross_profit,
+  receivables, ppe, depreciation, sga, cash_from_ops,
+  api_values_json, overridden_fields
+investments: market_cap, needs_manual_financials
+```
+
+All nullable / default NULL. No data loss. No production users so no backfill script.
+
+`packages/core/src/data/schema.ts` (the Drizzle definition) is updated in the same commit to match, so type inference stays correct — but Drizzle is definitional only, not the migration runner.
 
 ### 4.4 Granularity
 
@@ -97,13 +145,41 @@ Existing key: `(investmentId, period, year, quarter)`. Auto-calc uses `period='a
 
 ### 5.2 Claude extract fallback
 
-New IPC handler `dhando:claude:extract-financials`:
+New IPC handler `dhando:financials:extractFromText` (renamed from earlier `dhando:claude:extract-financials` for namespace consistency — all financial operations live under `dhando:financials:*`).
 
-- Input: investmentId + PDF file path OR pasted text block.
-- Main process reads file, calls Anthropic API using the key already loaded by today's `dotenv` fix.
-- System prompt specifies strict JSON schema with all 22 Financial fields nullable. Claude must output only JSON.
-- Response validated (zod or hand-rolled) before save. Invalid → error returned to renderer with raw Claude text for user inspection.
+- Input: investmentId + text block (renderer reads PDF / Excel / plain text and passes the extracted text string; PDF handling stays in renderer to avoid bundling a PDF parser in main).
+- Main process calls Anthropic API using the key already loaded by today's `dotenv` fix.
+- System prompt requests strict JSON matching the schema below. Claude must output only JSON (no markdown fences; if fences appear we strip them — already handled similarly in existing `claudeBrowserChat` in ipc.ts).
+- Response validated against Zod schema before save. Invalid → main throws an `ExtractError` with `.rawText` attached. Renderer displays a modal: "Couldn't parse Claude's response — [show raw] [retry]".
 - Saved rows marked `source='manual'`, `apiValuesJson=null`.
+
+**Zod schema** (`packages/core/src/api/claude-extractor-schema.ts`, new file):
+
+```ts
+import { z } from 'zod';
+
+const nn = z.number().nullable();
+
+export const extractedFinancialSchema = z.object({
+  year: z.number().int().min(1990).max(2100),
+  period: z.enum(['annual', 'quarterly']),
+  quarter: z.number().int().min(1).max(4).nullable(),
+  // All 22 numeric fields, every one nullable:
+  revenue: nn, netIncome: nn, ebitda: nn, totalAssets: nn, totalDebt: nn,
+  cash: nn, capex: nn, fcf: nn, workingCapital: nn,
+  retainedEarnings: nn, ebit: nn, totalLiabilities: nn, longTermDebt: nn,
+  currentAssets: nn, currentLiabilities: nn, sharesOutstanding: nn,
+  grossProfit: nn, receivables: nn, ppe: nn, depreciation: nn,
+  sga: nn, cashFromOps: nn,
+});
+
+export const extractedFinancialsResponseSchema = z.object({
+  statements: z.array(extractedFinancialSchema).min(1).max(10),
+});
+export type ExtractedFinancialsResponse = z.infer<typeof extractedFinancialsResponseSchema>;
+```
+
+Zod is a new dependency for `@dhando/core`. Rationale over hand-rolled validators: exhaustive by default, avoids silent schema drift as we add fields.
 
 ### 5.3 Manual edit — `Financials.tsx` (new page)
 
@@ -138,6 +214,45 @@ Tooltip: **"EODHD reported $4.2M; you overrode to $4.5M on 2026-04-14."** Clicki
 - `missing` → CTA card: "Enter financials" (opens Financials tab) or "Pull from EODHD" (retry).
 - `incomplete` → list missing fields by name, link to Financials tab with cells pre-scrolled.
 
+### 6.6 `useFinancials` invalidation strategy
+
+The hook is a small custom hook, not React Query (adding a new dep isn't justified for a single consumer pattern). Strategy:
+
+1. On mount, call `window.dhando.financials.get(investmentId)`.
+2. Subscribe to `window.dhando.financials.onChanged` (see §3.1). When main emits `dhando:financials:changed` with a matching `investmentId`, re-fetch.
+3. Unsubscribe on unmount (cleanup function returned by `onChanged`).
+4. Expose `refetch()` for manual triggers (e.g., after a user clicks "Pull from EODHD" on this page; the pull handler also emits `changed`, so refetch is belt-and-braces).
+
+Main process emits `changed` from exactly three places: `save`, `pull`, `extractFromText` handlers. No other path mutates financials.
+
+Hook output also includes `apiValuesJson: Record<string, number | null> | null` so `Financials.tsx` can render reconciliation badges without a second IPC round-trip.
+
+### 6.7 Score function refactor strategy
+
+Existing functions accept shape-specific input types (`AltmanZInputs`, `PiotroskiInputs`, `BeneishInputs`). We add **new adapter functions** alongside — no overloading, no breaking changes:
+
+```ts
+// NEW — in altman-z.ts
+export function calculateAltmanZFromFinancials(
+  current: Financial,
+  investment: { marketCap: number | null },
+): AltmanZResult | { status: 'insufficient'; missingFields: string[] };
+
+// NEW — in piotroski-f.ts
+export function calculatePiotroskiFFromFinancials(
+  current: Financial, prior: Financial,
+): PiotroskiFResult | { status: 'insufficient'; missingFields: string[] };
+
+// NEW — in beneish-m.ts
+export function calculateBeneishMFromFinancials(
+  current: Financial, prior: Financial,
+): BeneishMResult | { status: 'insufficient'; missingFields: string[] };
+```
+
+Each adapter performs null-checks, computes `ebit` fallback (`ebitda − depreciation`) when needed, and returns either the existing result type or an `insufficient` marker with `missingFields: string[]` listing the null inputs that blocked calculation.
+
+Legacy `calculateAltmanZ(inputs: AltmanZInputs)` etc. stay untouched. They're deleted in rollout Step 6 after no consumer remains.
+
 ### 6.2 Screener
 
 - Keep screening-criteria state (P/E threshold, ROIC threshold, etc.).
@@ -171,6 +286,8 @@ Tests written before implementation, in this order:
 7. `useFinancials.test.tsx` — mocks `window.dhando.financials`; verifies status-state transitions.
 8. Page smoke tests for DistressRadar, DealAnalyzer (happy + missing + incomplete paths).
 
+**In-scope test suites:** 1–8 above. Out-of-scope: Screener/MagicFormula/Calculator page smoke tests (covered by existing suites, only data-source wire is changing), PrivateMarkets (no change this round), quarterly-period paths, multi-currency paths.
+
 ## 8. Rollout Order
 
 Each step keeps the app buildable and green.
@@ -186,7 +303,7 @@ Each step keeps the app buildable and green.
 
 - **EODHD coverage for JSE stocks** — likely incomplete. Claude-extract fallback mitigates.
 - **Ebit-fallback correctness** — `ebitda − depreciation` assumes no non-operating items. Good enough for most; Beneish sensitivity is low.
-- **marketCap staleness** — `marketCap` stored on `Investment` is a snapshot. For Altman Z we want current market cap. On-demand refresh in scoring code using existing quote API, OR accept staleness. Decision deferred to implementation; favor on-demand refresh.
+- **marketCap handling** — **Decided:** on-demand refresh at score time. `calculateAltmanZFromFinancials` requires `investment.marketCap`; the DistressRadar handler path (and any future caller) is responsible for calling `dhando:stock:quote` (existing EODHD real-time endpoint) immediately before scoring and passing the fresh value. The `investment.market_cap` column stores the last-seen value for display purposes only (Watchlist row, Financials page header). Scoring never reads the stored value. This keeps the score accurate without introducing a cache-invalidation layer.
 - **Claude extraction cost** — each run ~$0.02–0.10 depending on doc size. Acceptable for a power-user tool.
 
 ## 10. Non-Goals
