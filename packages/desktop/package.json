@@ -5,7 +5,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "build:main": "esbuild src/main/index.ts --bundle --platform=node --outfile=dist/main/index.js --external:electron --external:better-sqlite3 && esbuild src/main/preload.ts --bundle --platform=node --outfile=dist/main/preload.js --external:electron",
-    "dev": "npm run build:main && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev": "npm run build:main && concurrently \"vite\" \"wait-on http://localhost:5273 && electron .\"",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
     "electron": "electron .",
@@ -14,6 +14,7 @@
   "dependencies": {
     "@dhando/core": "workspace:*",
     "better-sqlite3": "^11.8.0",
+    "dotenv": "^16.4.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-router-dom": "^6.28.0"
