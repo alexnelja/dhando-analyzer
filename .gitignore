@@ -6,3 +6,12 @@ dist/
 *.db-wal
 .env
 .DS_Store
+.env.local
+build/
+.vscode/
+.claude/
+.worktrees/
+*.log
+__pycache__/
+.venv/
+.pytest_cache/
