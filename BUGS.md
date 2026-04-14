@@ -1,0 +1,13 @@
+# Known Bugs
+
+None identified. No TODO/FIXME/HACK markers in `packages/` at time of writing.
+
+Record new bugs here as:
+
+```
+## <short title>
+- Repro: …
+- Expected: …
+- Actual: …
+- File(s): …
+```
