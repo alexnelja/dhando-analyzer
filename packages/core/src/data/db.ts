@@ -39,6 +39,7 @@ export function createDatabase(path: string): DatabaseConnection {
   sqlite.pragma('foreign_keys = ON');
 
   sqlite.exec(CREATE_TABLES_SQL);
+  runMigrations(sqlite);
 
   return {
     sqlite,
@@ -55,6 +56,33 @@ export function createDatabase(path: string): DatabaseConnection {
       return sqlite.prepare(sql).get(...params) as T | undefined;
     },
   };
+}
+
+/**
+ * Idempotent migrations run after table creation on every connection.
+ * SQLite does not support `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, so each
+ * ALTER is wrapped in a try/catch that re-throws any error that is NOT the
+ * "duplicate column" error SQLite raises when the column already exists.
+ */
+function runMigrations(sqlite: Database.Database): void {
+  const addColumn = (table: string, col: string, decl: string) => {
+    try {
+      sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes('duplicate column')) throw e;
+    }
+  };
+  const financialCols: [string, string][] = [
+    ['retained_earnings', 'REAL'], ['ebit', 'REAL'], ['total_liabilities', 'REAL'],
+    ['long_term_debt', 'REAL'], ['current_assets', 'REAL'], ['current_liabilities', 'REAL'],
+    ['shares_outstanding', 'REAL'], ['gross_profit', 'REAL'], ['receivables', 'REAL'],
+    ['ppe', 'REAL'], ['depreciation', 'REAL'], ['sga', 'REAL'], ['cash_from_ops', 'REAL'],
+    ['api_values_json', 'TEXT'], ['overridden_fields', 'TEXT'],
+  ];
+  for (const [c, t] of financialCols) addColumn('financials', c, t);
+  addColumn('investments', 'market_cap', 'REAL');
+  addColumn('investments', 'needs_manual_financials', 'INTEGER DEFAULT 0');
 }
 
 /**
