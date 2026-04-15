@@ -18,6 +18,7 @@ Workflow: tests-first TDD. Write the failing test, then implement.
 - [ ] Missing methodologies (`docs/MISSING-METHODOLOGIES-RESEARCH.md`)
 - [ ] Paid data sources integration (`docs/paid-data-sources-analysis.md`)
 - [ ] Polymarket / game-theory UI flows beyond current predictions page
+- [ ] Quiver Quantitative alt-data integration (`research/quiver-quant-alt-data.md`) — congressional trades, lobbying, insider flow, patents. Surfaced during polyalexous Phase 1 research; better fit here than Polymarket.
 
 ## Backlog
 - [ ] Additional YAML rulesets beyond graham / munger / pabrai
