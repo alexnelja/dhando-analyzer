@@ -31,11 +31,25 @@ pnpm --filter @dhando/cli build
 node packages/cli/dist/index.js --help
 # or: pnpm --filter @dhando/cli dev   (tsc --watch)
 
-# Tests (vitest in core)
+# Tests (vitest in core + desktop)
 pnpm test
 ```
 
 Electron is the intended runtime — do not run the renderer browser-only.
+
+### Native module ABI (better-sqlite3)
+
+`better-sqlite3` is a native module, and Electron and Node use different ABIs.
+The shared `node_modules` can hold only one build at a time, so the scripts
+toggle it automatically:
+
+- `pnpm --filter @dhando/desktop dev` runs a `predev` hook that rebuilds it for
+  **Electron** (`scripts/rebuild-electron.mjs` → prebuild-install for Electron's
+  target; the `electron-rebuild` CLI is broken on Node 26).
+- `pnpm test` runs a `pretest` hook that rebuilds it for **Node**.
+
+If you ever hit `NODE_MODULE_VERSION` errors, just run the matching command —
+`pnpm --filter @dhando/desktop rebuild:electron` or `…rebuild:node`.
 
 ## Architecture
 
