@@ -8,6 +8,9 @@
  * Profitability (4), Leverage & Liquidity (3), Operating Efficiency (2).
  */
 
+import type { Financial } from '../models/financial.js';
+import { collectMissing, type InsufficientResult } from './insufficient.js';
+
 /** Financial data for a single reporting period used by the F-Score. */
 export interface PiotroskiPeriodInputs {
   netIncome: number;
@@ -157,4 +160,69 @@ export function calculatePiotroskiF(inputs: PiotroskiInputs): PiotroskiFResult {
   const score = signals.reduce((sum, s) => sum + s.value, 0);
 
   return { score, signals, interpretation: interpretPiotroskiF(score) };
+}
+
+/** Fields each annual period must supply for the F-Score. */
+const PIOTROSKI_FIELDS = [
+  'netIncome',
+  'cashFromOps',
+  'totalAssets',
+  'longTermDebt',
+  'currentAssets',
+  'currentLiabilities',
+  'sharesOutstanding',
+  'grossProfit',
+  'revenue',
+] as const;
+
+/**
+ * Compute the Piotroski F-Score from two consecutive annual {@link Financial}
+ * rows. Returns {@link InsufficientResult} (listing `prior` and/or
+ * `current.<field>` / `prior.<field>` names) when data is missing.
+ */
+export function calculatePiotroskiFFromFinancials(
+  current: Financial,
+  prior: Financial | null,
+): PiotroskiFResult | InsufficientResult {
+  if (!prior) {
+    return { status: 'insufficient', missingFields: ['prior'] };
+  }
+
+  const pick = (fin: Financial): Record<string, number | null> =>
+    Object.fromEntries(PIOTROSKI_FIELDS.map((k) => [k, fin[k] as number | null]));
+
+  const missingFields = [
+    ...collectMissing(pick(current)).map((n) => `current.${n}`),
+    ...collectMissing(pick(prior)).map((n) => `prior.${n}`),
+  ];
+  if (missingFields.length > 0) {
+    return { status: 'insufficient', missingFields };
+  }
+
+  return calculatePiotroskiF({
+    current: {
+      netIncome: current.netIncome!,
+      operatingCashFlow: current.cashFromOps!,
+      totalAssets: current.totalAssets!,
+      totalAssetsLastYear: prior.totalAssets!,
+      longTermDebt: current.longTermDebt!,
+      currentAssets: current.currentAssets!,
+      currentLiabilities: current.currentLiabilities!,
+      sharesOutstanding: current.sharesOutstanding!,
+      grossProfit: current.grossProfit!,
+      revenue: current.revenue!,
+    },
+    prior: {
+      netIncome: prior.netIncome!,
+      operatingCashFlow: prior.cashFromOps!,
+      totalAssets: prior.totalAssets!,
+      totalAssetsLastYear: prior.totalAssets!,
+      longTermDebt: prior.longTermDebt!,
+      currentAssets: prior.currentAssets!,
+      currentLiabilities: prior.currentLiabilities!,
+      sharesOutstanding: prior.sharesOutstanding!,
+      grossProfit: prior.grossProfit!,
+      revenue: prior.revenue!,
+    },
+  });
 }
