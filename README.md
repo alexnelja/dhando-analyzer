@@ -23,7 +23,7 @@ cp .env.example .env   # add EODHD, FRED, Finnhub, ANTHROPIC keys as needed
 # Full monorepo build
 pnpm build
 
-# Electron desktop (main + renderer, dev server on :5273)
+# Electron desktop (main + renderer, dev server on :5274)
 pnpm --filter @dhando/desktop dev
 
 # CLI (build once, then invoke)

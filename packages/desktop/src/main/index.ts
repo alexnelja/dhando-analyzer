@@ -87,7 +87,7 @@ function createWindow() {
   });
 
   if (isDev) {
-    win.loadURL('http://localhost:5273');
+    win.loadURL('http://localhost:5274');
     win.webContents.openDevTools();
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'));

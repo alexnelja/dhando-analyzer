@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
     emptyOutDir: true,
   },
   server: {
-    port: 5273,
+    port: 5274,
     strictPort: true,
     proxy: {
       '/api/eodhd': {
