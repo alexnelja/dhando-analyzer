@@ -1,0 +1,52 @@
+name: Release
+
+# Build installers on every platform when a version tag is pushed, and attach
+# them to the GitHub Release for that tag.
+#   git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # `dist` rebuilds better-sqlite3 for Electron's ABI, builds, and runs
+      # electron-builder for the host OS (mac → dmg/zip, win → nsis, linux → AppImage).
+      # Builds are unsigned (mac.identity: null); add certs/notarization later.
+      - name: Build installers
+        run: pnpm --filter @dhando/desktop dist
+
+      - name: Attach installers to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: false
+          files: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.zip
+            packages/desktop/release/*.exe
+            packages/desktop/release/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
