@@ -11,6 +11,9 @@
  * the modified Z'-Score or Z''-Score variants for those contexts.
  */
 
+import type { Financial } from '../models/financial.js';
+import { collectMissing, type InsufficientResult } from './insufficient.js';
+
 /**
  * Inputs required for the Altman Z-Score calculation.
  * All monetary values must be in a consistent unit (e.g. thousands, millions).
@@ -110,4 +113,50 @@ export function calculateAltmanZ(inputs: AltmanZInputs): AltmanZResult {
   const z = 1.2 * A + 1.4 * B + 3.3 * C + 0.6 * D + 1.0 * E;
 
   return { z, components: { A, B, C, D, E }, zone: interpretAltmanZ(z) };
+}
+
+/**
+ * Compute the Altman Z-Score from a {@link Financial} row plus market cap.
+ *
+ * EBIT is taken directly when present; otherwise it falls back to
+ * `ebitda - depreciation` when both are available. If any required input is
+ * missing the function returns {@link InsufficientResult} listing every absent
+ * field (camelCase), rather than throwing.
+ *
+ * @param current - The current-period financial statement.
+ * @param opts.marketCap - Market capitalisation of equity (shares × price).
+ */
+export function calculateAltmanZFromFinancials(
+  current: Financial,
+  opts: { marketCap: number | null },
+): AltmanZResult | InsufficientResult {
+  const effectiveEbit =
+    current.ebit ??
+    (current.ebitda != null && current.depreciation != null
+      ? current.ebitda - current.depreciation
+      : null);
+
+  const missingFields = collectMissing({
+    workingCapital: current.workingCapital,
+    totalAssets: current.totalAssets,
+    retainedEarnings: current.retainedEarnings,
+    ebit: effectiveEbit,
+    totalLiabilities: current.totalLiabilities,
+    revenue: current.revenue,
+    marketCap: opts.marketCap,
+  });
+
+  if (missingFields.length > 0) {
+    return { status: 'insufficient', missingFields };
+  }
+
+  return calculateAltmanZ({
+    workingCapital: current.workingCapital!,
+    totalAssets: current.totalAssets!,
+    retainedEarnings: current.retainedEarnings!,
+    ebit: effectiveEbit!,
+    marketCapEquity: opts.marketCap!,
+    totalLiabilities: current.totalLiabilities!,
+    revenue: current.revenue!,
+  });
 }
