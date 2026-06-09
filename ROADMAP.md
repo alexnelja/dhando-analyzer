@@ -2,13 +2,18 @@
 
 Workflow: tests-first TDD. Write the failing test, then implement.
 
-## In progress
-- [ ] Shared financial data store — `docs/superpowers/plans/2026-04-13-shared-financial-data-store.md`
-  - preload IPC bridge
-  - invalidation strategy
-  - extractor schema (zod)
-  - auto-calc + reconciliation across components
-  - percentages in UI (not decimals), thesis capture, lot aggregation
+## Done
+- [x] Shared financial data store — `docs/superpowers/plans/2026-04-13-shared-financial-data-store.md`
+  - [x] extended Financial/Investment schemas + idempotent migrations (Task 1)
+  - [x] `financials-repo` CRUD + upsert + 2-year fetch (Task 2)
+  - [x] Altman/Piotroski/Beneish `*FromFinancials` adapters w/ insufficient-field detection (Tasks 3–5)
+  - [x] EODHD statements puller + Claude zod-validated text extractor (Tasks 6–7)
+  - [x] `financials-service` pull/save/reconcile + needs-manual flag (Task 8)
+  - [x] core exports (Task 9); IPC handlers + preload bridge + `changed` event (Tasks 10–11)
+  - [x] `useFinancials` hook + Financials page (Tasks 12–13)
+  - [x] DistressRadar real-adapter scores; Watchlist auto-pull + manual-needed banner (Tasks 14–16)
+  - [x] cleanup + full verification: 1027 core + 89 desktop tests green, monorepo build clean (Task 17)
+  - Follow-up: MagicFormula / Calculator pre-fill from the store (deferred — see README WIP)
 
 ## Next
 - [ ] Phase 5 — portfolio tracker (`docs/superpowers/plans/2026-03-31-phase5-portfolio-tracker.md`)
