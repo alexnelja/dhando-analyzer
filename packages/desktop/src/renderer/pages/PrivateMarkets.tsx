@@ -28,7 +28,7 @@ interface PrivateMarketsResult {
     totalScore: number;
     maxScore: number;
     passesGate: boolean;
-    breakdown: Array<{ principle: string; score: number; weight: number; weightedScore: number }>;
+    principleScores: Array<{ principle: string; score: number; weight: number; weighted: number }>;
   };
   emRisk?: {
     totalScore: number;
@@ -457,11 +457,11 @@ export function PrivateMarkets() {
           </div>
 
           {/* Principle breakdown */}
-          {result.dhandhoFit.breakdown && (
+          {result.dhandhoFit.principleScores && (
             <div className="bg-white rounded-xl border border-gray-200/60 p-5 mb-5">
               <h3 className="text-sm font-semibold text-gray-700 mb-4">Principle Breakdown</h3>
               <div className="space-y-2">
-                {result.dhandhoFit.breakdown.map((item, idx) => (
+                {result.dhandhoFit.principleScores.map((item, idx) => (
                   <div key={idx} className="flex items-center gap-4">
                     <span className="w-64 text-xs text-gray-600 shrink-0">{item.principle}</span>
                     <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -474,7 +474,7 @@ export function PrivateMarkets() {
                       />
                     </div>
                     <span className="text-xs text-gray-500 w-16 text-right">
-                      {item.weightedScore.toFixed(1)} pts
+                      {item.weighted.toFixed(1)} pts
                     </span>
                   </div>
                 ))}

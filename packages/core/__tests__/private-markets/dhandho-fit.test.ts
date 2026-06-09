@@ -62,6 +62,18 @@ describe('calculateDhandhoFit — perfect 10s', () => {
     expect(result.totalScore).toBe(105);
   });
 
+  it('reports maxScore of 105 (for "x / max" display)', () => {
+    const result = calculateDhandhoFit(ALL_TENS);
+    expect(result.maxScore).toBe(105);
+  });
+
+  it('reports maxScore even when the deal scores zero', () => {
+    const allZeros = Object.fromEntries(
+      Object.keys(ALL_TENS).map((k) => [k, 0]),
+    ) as typeof ALL_TENS;
+    expect(calculateDhandhoFit(allZeros).maxScore).toBe(105);
+  });
+
   it('passes gate', () => {
     const result = calculateDhandhoFit(ALL_TENS);
     expect(result.passesGate).toBe(true);

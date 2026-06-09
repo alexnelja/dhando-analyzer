@@ -139,6 +139,7 @@ export function calculateDhandhoFit(input: DhandhoFitInput): DhandhoFitResult {
   return {
     principleScores,
     totalScore,
+    maxScore: DHANDHO_FIT_MAX_SCORE,
     passesGate: totalScore >= DHANDHO_FIT_GATE,
   };
 }

@@ -66,5 +66,7 @@ export interface DhandhoFitResult {
     weighted: number;
   }[];
   totalScore: number;
+  /** Maximum achievable weighted score (105) — for "x / max" display. */
+  maxScore: number;
   passesGate: boolean;
 }
