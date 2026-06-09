@@ -9,6 +9,7 @@ import { Portfolio } from './pages/Portfolio';
 import { Compare } from './pages/Compare';
 import { DistressRadar } from './pages/DistressRadar';
 import { Financials } from './pages/Financials';
+import { Settings } from './pages/Settings';
 import { MagicFormula } from './pages/MagicFormula';
 import { PrivateMarkets } from './pages/PrivateMarkets';
 import { Rules } from './pages/Rules';
@@ -41,6 +42,7 @@ export function App() {
           <Route path="/stakeholders" element={<StakeholderAnalysis />} />
           <Route path="/private-markets" element={<PrivateMarkets />} />
           <Route path="/rules" element={<Rules />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>
     </HashRouter>

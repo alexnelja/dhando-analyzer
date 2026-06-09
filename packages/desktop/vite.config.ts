@@ -1,11 +1,7 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import * as path from 'path';
 
-export default defineConfig(({ mode }) => {
-  // Load env from monorepo root (../../.env) so ANTHROPIC_API_KEY etc. are picked up.
-  const env = loadEnv(mode, path.resolve(process.cwd(), '../../'), '');
-  return defineConfig({
+export default defineConfig({
   plugins: [react()],
   base: './',
   root: 'src/renderer',
@@ -39,11 +35,7 @@ export default defineConfig(({ mode }) => {
       },
     },
   },
-  define: {
-    // Expose the Anthropic key to the browser renderer for the proxy fallback.
-    // Only set when the env var is present; never undefined in Electron (handled server-side).
-    'import.meta.env.VITE_ANTHROPIC_API_KEY': JSON.stringify(env.ANTHROPIC_API_KEY ?? ''),
-    'import.meta.env.VITE_EODHD_API_KEY': JSON.stringify(env.EODHD_API_KEY ?? ''),
-  },
-  });
+  // NOTE: API keys are intentionally NOT baked into the renderer bundle — that
+  // would ship the developer's keys to every user. In Electron the renderer
+  // calls APIs over IPC and the main process supplies per-user keys (Settings).
 });

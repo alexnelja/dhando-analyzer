@@ -56,6 +56,11 @@ contextBridge.exposeInMainWorld('dhando', {
     analyze: (input: unknown) => ipcRenderer.invoke('dhando:privatemarkets:analyze', input),
   },
 
+  settings: {
+    getKeys: () => ipcRenderer.invoke('dhando:settings:getKeys'),
+    setKeys: (keys: Record<string, string>) => ipcRenderer.invoke('dhando:settings:setKeys', keys),
+  },
+
   macro: {
     vix: () => ipcRenderer.invoke('dhando:macro:vix'),
     creditSpread: () => ipcRenderer.invoke('dhando:macro:credit-spread'),

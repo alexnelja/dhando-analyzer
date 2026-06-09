@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/stakeholders', label: 'Stakeholders', icon: '♟' },
   { path: '/private-markets', label: 'Private Markets', icon: '◇' },
   { path: '/rules', label: 'Rules', icon: '≡' },
+  { path: '/settings', label: 'Settings', icon: '⚙' },
 ];
 
 interface LayoutProps {

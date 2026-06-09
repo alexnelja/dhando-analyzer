@@ -2,6 +2,7 @@ export * from './models/index.js';
 export * from './contracts/index.js';
 export * from './data/db.js';
 export * from './data/financials-repo.js';
+export * from './data/settings-repo.js';
 export * from './api/types.js';
 export * from './api/provider.js';
 export * from './api/eodhd.js';

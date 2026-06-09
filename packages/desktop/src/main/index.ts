@@ -31,6 +31,7 @@ import { createFredClient } from '@dhando/core';
 import { createFinnhubClient } from '@dhando/core';
 import { createClaudeClient } from '@dhando/core';
 import { pullStatements, type Financial } from '@dhando/core';
+import { getSetting, setSetting, getAllSettings } from '@dhando/core';
 import {
   financialsGet,
   financialsSave,
@@ -50,18 +51,33 @@ function getDb() {
   return db;
 }
 
-// Macro data clients — keys are optional; handlers return empty arrays when absent.
-const fredClient = createFredClient(process.env.FRED_API_KEY ?? '');
-const finnhubClient = createFinnhubClient(process.env.FINNHUB_API_KEY ?? '');
+/** The API keys the app understands, surfaced in the Settings page. */
+const API_KEY_NAMES = [
+  'EODHD_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'FRED_API_KEY',
+  'FINNHUB_API_KEY',
+] as const;
 
-// Claude client — null when ANTHROPIC_API_KEY is not set.
-const claudeClient = process.env.ANTHROPIC_API_KEY
-  ? createClaudeClient(process.env.ANTHROPIC_API_KEY)
-  : null;
+/**
+ * Resolve an API key: a per-user value saved in Settings (the DB) takes
+ * precedence, falling back to the process env (dev convenience). This is what
+ * makes the packaged app work for other users — they enter their own keys.
+ */
+function apiKey(name: (typeof API_KEY_NAMES)[number]): string {
+  return getSetting(getDb(), name) ?? process.env[name] ?? '';
+}
 
-// Bound EODHD statements fetcher used by financials pull/auto-pull.
+// Clients are built on demand so a key saved in Settings takes effect without
+// an app restart. They are thin fetch wrappers, so per-call construction is cheap.
+const getFred = () => createFredClient(apiKey('FRED_API_KEY'));
+const getFinnhub = () => createFinnhubClient(apiKey('FINNHUB_API_KEY'));
+const getClaude = () => {
+  const key = apiKey('ANTHROPIC_API_KEY');
+  return key ? createClaudeClient(key) : null;
+};
 const eodhdFetcher = (ticker: string, years: number) =>
-  pullStatements(process.env.EODHD_API_KEY ?? '', ticker, years);
+  pullStatements(apiKey('EODHD_API_KEY'), ticker, years);
 
 /** Broadcast a financials-changed event so every window's hook re-fetches. */
 function emitFinancialsChanged(investmentId: string) {
@@ -252,12 +268,33 @@ function registerIpcHandlers() {
   ipcMain.handle(
     'dhando:financials:extractFromText',
     async (_e, investmentId: string, text: string) => {
-      if (!claudeClient) throw new Error('ANTHROPIC_API_KEY not configured');
-      const rows = await financialsExtract(getDb(), claudeClient, investmentId, text);
+      const claude = getClaude();
+      if (!claude) throw new Error('Anthropic API key not set — add it in Settings');
+      const rows = await financialsExtract(getDb(), claude, investmentId, text);
       emitFinancialsChanged(investmentId);
       return rows;
     },
   );
+
+  // ── Settings (per-user API keys) ──────────────────────────────────────────
+  ipcMain.handle('dhando:settings:getKeys', () => {
+    const stored = getAllSettings(getDb());
+    // Return each key's value (the user's own machine) plus whether the env
+    // provides a dev fallback, so the UI can show what's active.
+    return Object.fromEntries(
+      API_KEY_NAMES.map((name) => [
+        name,
+        { value: stored[name] ?? '', envFallback: Boolean(process.env[name]) },
+      ]),
+    );
+  });
+
+  ipcMain.handle('dhando:settings:setKeys', (_e, keys: Record<string, string>) => {
+    for (const name of API_KEY_NAMES) {
+      if (name in keys) setSetting(getDb(), name, keys[name] ?? '');
+    }
+    return { ok: true };
+  });
 
   // ── Private Markets ───────────────────────────────────────────────────────
   ipcMain.handle(
@@ -268,26 +305,27 @@ function registerIpcHandlers() {
   );
 
   // ── FRED Macro Data ───────────────────────────────────────────────────────
-  ipcMain.handle('dhando:macro:vix', () => fredClient.getVix());
-  ipcMain.handle('dhando:macro:credit-spread', () => fredClient.getCreditSpread());
-  ipcMain.handle('dhando:macro:yield-curve', () => fredClient.getYieldCurve());
-  ipcMain.handle('dhando:macro:fed-rate', () => fredClient.getFedFundsRate());
-  ipcMain.handle('dhando:macro:sentiment', () => fredClient.getConsumerSentiment());
-  ipcMain.handle('dhando:macro:sa-repo', () => fredClient.getSaRepoRate());
-  ipcMain.handle('dhando:macro:zar-usd', () => fredClient.getZarUsd());
+  ipcMain.handle('dhando:macro:vix', () => getFred().getVix());
+  ipcMain.handle('dhando:macro:credit-spread', () => getFred().getCreditSpread());
+  ipcMain.handle('dhando:macro:yield-curve', () => getFred().getYieldCurve());
+  ipcMain.handle('dhando:macro:fed-rate', () => getFred().getFedFundsRate());
+  ipcMain.handle('dhando:macro:sentiment', () => getFred().getConsumerSentiment());
+  ipcMain.handle('dhando:macro:sa-repo', () => getFred().getSaRepoRate());
+  ipcMain.handle('dhando:macro:zar-usd', () => getFred().getZarUsd());
 
   // ── Finnhub Stock Data ────────────────────────────────────────────────────
   ipcMain.handle('dhando:stock:insiders', (_event, symbol: string) =>
-    finnhubClient.getInsiderTransactions(symbol),
+    getFinnhub().getInsiderTransactions(symbol),
   );
   ipcMain.handle('dhando:stock:recommendations', (_event, symbol: string) =>
-    finnhubClient.getRecommendations(symbol),
+    getFinnhub().getRecommendations(symbol),
   );
 
   // ── Claude AI ─────────────────────────────────────────────────────────────
   ipcMain.handle('dhando:claude:analyze-scenario', async (_e, scenario: string, context?: string) => {
-    if (!claudeClient) throw new Error('ANTHROPIC_API_KEY not configured');
-    return claudeClient.analyzeScenario(scenario, context);
+    const claude = getClaude();
+    if (!claude) throw new Error('Anthropic API key not set — add it in Settings');
+    return claude.analyzeScenario(scenario, context);
   });
 
   ipcMain.handle('dhando:claude:analyze-result', async (
@@ -295,8 +333,9 @@ function registerIpcHandlers() {
     scenario: string,
     result: { predictedOutcome: number; probability: number; confidence: number; stakeholderInfluence: { name: string; influence: number }[] },
   ) => {
-    if (!claudeClient) throw new Error('ANTHROPIC_API_KEY not configured');
-    return claudeClient.analyzeResult(scenario, result);
+    const claude = getClaude();
+    if (!claude) throw new Error('Anthropic API key not set — add it in Settings');
+    return claude.analyzeResult(scenario, result);
   });
 
   ipcMain.handle('dhando:claude:debate', async (
@@ -304,7 +343,8 @@ function registerIpcHandlers() {
     scenario: string,
     stakeholders: { name: string; position: number; salience: number; power: number }[],
   ) => {
-    if (!claudeClient) throw new Error('ANTHROPIC_API_KEY not configured');
-    return claudeClient.debate(scenario, stakeholders);
+    const claude = getClaude();
+    if (!claude) throw new Error('Anthropic API key not set — add it in Settings');
+    return claude.debate(scenario, stakeholders);
   });
 }

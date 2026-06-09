@@ -299,4 +299,9 @@ CREATE TABLE IF NOT EXISTS portfolio_positions (
   exited_at     TEXT,
   exit_price    REAL
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;

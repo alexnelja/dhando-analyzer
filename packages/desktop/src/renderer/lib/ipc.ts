@@ -842,6 +842,26 @@ export function onFinancialsChanged(cb: (investmentId: string) => void): () => v
   return financialsApi()?.onChanged(cb) ?? (() => {});
 }
 
+// ── Settings (per-user API keys) ─────────────────────────────────────────────
+
+/** Per-key state: the saved value plus whether a dev env fallback exists. */
+export interface ApiKeyState {
+  value: string;
+  envFallback: boolean;
+}
+
+/** Fetch all configurable API keys and their current state. */
+export async function getApiKeys(): Promise<Record<string, ApiKeyState>> {
+  if (!isElectron) return {};
+  return (window as any).dhando.settings.getKeys();
+}
+
+/** Persist API keys (empty string clears a key). */
+export async function setApiKeys(keys: Record<string, string>): Promise<void> {
+  if (!isElectron) return;
+  await (window as any).dhando.settings.setKeys(keys);
+}
+
 // ── Magic Formula ─────────────────────────────────────────────────────────────
 
 export interface MagicFormulaEntry {
