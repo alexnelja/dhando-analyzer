@@ -1,6 +1,7 @@
 export * from './models/index.js';
 export * from './contracts/index.js';
 export * from './data/db.js';
+export * from './data/financials-repo.js';
 export * from './api/types.js';
 export * from './api/provider.js';
 export * from './api/eodhd.js';
@@ -19,4 +20,8 @@ export * from './distress/index.js';
 export * from './private-markets/index.js';
 export * from './api/polymarket.js';
 export * from './api/claude.js';
+export * from './api/eodhd-statements.js';
+export * from './api/claude-extractor.js';
+export * from './api/claude-extractor-schema.js';
+export * from './services/financials-service.js';
 export * from './game-theory/index.js';
