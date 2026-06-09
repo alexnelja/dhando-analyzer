@@ -8,6 +8,7 @@ import { DealAnalyzer } from './pages/DealAnalyzer';
 import { Portfolio } from './pages/Portfolio';
 import { Compare } from './pages/Compare';
 import { DistressRadar } from './pages/DistressRadar';
+import { Financials } from './pages/Financials';
 import { MagicFormula } from './pages/MagicFormula';
 import { PrivateMarkets } from './pages/PrivateMarkets';
 import { Rules } from './pages/Rules';
@@ -32,6 +33,8 @@ export function App() {
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/compare" element={<Compare />} />
           <Route path="/distress" element={<DistressRadar />} />
+          <Route path="/financials" element={<Financials />} />
+          <Route path="/financials/:investmentId" element={<Financials />} />
           <Route path="/magic-formula" element={<MagicFormula />} />
           <Route path="/calculator" element={<Calculator />} />
           <Route path="/predictions" element={<Predictions />} />

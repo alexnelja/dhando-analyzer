@@ -11,6 +11,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard', icon: '▦' },
   { path: '/watchlist', label: 'Watchlist', icon: '◉' },
   { path: '/screener', label: 'Screener', icon: '⊞' },
+  { path: '/financials', label: 'Financials', icon: '▤' },
   { path: '/deal-analyzer', label: 'Deal Analyzer', icon: '◈' },
   { path: '/portfolio', label: 'Portfolio', icon: '◎' },
   { path: '/compare', label: 'Compare', icon: '⚖' },

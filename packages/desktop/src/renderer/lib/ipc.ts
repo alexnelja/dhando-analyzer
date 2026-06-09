@@ -796,9 +796,14 @@ export async function runDealAnalysis(input: any): Promise<any> {
 
 import type { Financial } from '@dhando/core';
 
-/** The financials store is Electron-only; in browser mode these are no-ops. */
+/**
+ * The financials store is Electron-only; in browser mode these are no-ops.
+ * Resolved dynamically (not via the cached `isElectron`) so the bridge is
+ * picked up whenever `window.dhando` becomes available.
+ */
 function financialsApi() {
-  return isElectron ? (window as any).dhando.financials : null;
+  if (typeof window === 'undefined') return null;
+  return (window as any).dhando?.financials ?? null;
 }
 
 /** Persist a single (possibly user-edited) financial row. */
