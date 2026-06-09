@@ -14,6 +14,9 @@
  * other signals).
  */
 
+import type { Financial } from '../models/financial.js';
+import { collectMissing, type InsufficientResult } from './insufficient.js';
+
 /**
  * Financial inputs for one annual period required for the Beneish M-Score.
  */
@@ -184,4 +187,80 @@ export function calculateBeneishM(inputs: BeneishInputs): BeneishMResult {
     indices: { DSRI, GMI, AQI, SGI, DEPI, SGAI, TATA, LVGI },
     manipulationFlag,
   };
+}
+
+/**
+ * Map `Financial` snake/camel fields to the {@link BeneishPeriodInputs} a single
+ * period needs. `cashFromOps` is only required for the current period (TATA).
+ */
+const BENEISH_PRIOR_FIELDS = [
+  'receivables',
+  'revenue',
+  'grossProfit',
+  'currentAssets',
+  'ppe',
+  'totalAssets',
+  'depreciation',
+  'sga',
+  'netIncome',
+  'currentLiabilities',
+  'longTermDebt',
+] as const;
+
+/**
+ * Compute the Beneish M-Score from two consecutive annual {@link Financial}
+ * rows. All eight indices compare current to prior, so both years are required;
+ * `cashFromOps` is additionally required on the current year for the TATA index.
+ * Returns {@link InsufficientResult} when any required field is missing.
+ */
+export function calculateBeneishMFromFinancials(
+  current: Financial,
+  prior: Financial | null,
+): BeneishMResult | InsufficientResult {
+  if (!prior) {
+    return { status: 'insufficient', missingFields: ['prior'] };
+  }
+
+  const pickPrior = (fin: Financial): Record<string, number | null> =>
+    Object.fromEntries(BENEISH_PRIOR_FIELDS.map((k) => [k, fin[k] as number | null]));
+
+  const missingFields = [
+    ...collectMissing({ ...pickPrior(current), cashFromOps: current.cashFromOps }).map(
+      (n) => `current.${n}`,
+    ),
+    ...collectMissing(pickPrior(prior)).map((n) => `prior.${n}`),
+  ];
+  if (missingFields.length > 0) {
+    return { status: 'insufficient', missingFields };
+  }
+
+  return calculateBeneishM({
+    current: {
+      accountsReceivable: current.receivables!,
+      revenue: current.revenue!,
+      grossProfit: current.grossProfit!,
+      currentAssets: current.currentAssets!,
+      ppAndE: current.ppe!,
+      totalAssets: current.totalAssets!,
+      depreciation: current.depreciation!,
+      sgaExpenses: current.sga!,
+      netIncome: current.netIncome!,
+      totalCurrentLiabilities: current.currentLiabilities!,
+      longTermDebt: current.longTermDebt!,
+      operatingCashFlow: current.cashFromOps!,
+    },
+    prior: {
+      accountsReceivable: prior.receivables!,
+      revenue: prior.revenue!,
+      grossProfit: prior.grossProfit!,
+      currentAssets: prior.currentAssets!,
+      ppAndE: prior.ppe!,
+      totalAssets: prior.totalAssets!,
+      depreciation: prior.depreciation!,
+      sgaExpenses: prior.sga!,
+      netIncome: prior.netIncome!,
+      totalCurrentLiabilities: prior.currentLiabilities!,
+      longTermDebt: prior.longTermDebt!,
+    },
+  });
 }
