@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { ScoreCard } from '../components/ScoreCard';
 import { TrafficLightBadge } from '../components/TrafficLight';
-import { listWatchlist, runDistressCheck, getFinancials, type InvestmentRow } from '../lib/ipc';
+import { listWatchlist, runDistressCheck, type InvestmentRow } from '../lib/ipc';
+import { useFinancials } from '../hooks/useFinancials';
+// Renderer-safe deep import (avoids the fs-using rules-engine in the package root).
+import {
+  calculateAltmanZFromFinancials,
+  calculatePiotroskiFFromFinancials,
+  calculateBeneishMFromFinancials,
+} from '@dhando/core/dist/scoring/index.js';
 
 interface DistressResult {
   investmentId: string;
@@ -65,7 +72,8 @@ export function DistressRadar() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DistressResult | null>(null);
   const [error, setError] = useState('');
-  const [autoCalcStatus, setAutoCalcStatus] = useState<'none' | 'loaded' | 'missing'>('none');
+  const [autoCalcStatus, setAutoCalcStatus] = useState<'none' | 'loaded' | 'incomplete' | 'missing'>('none');
+  const [autoMissingFields, setAutoMissingFields] = useState<string[]>([]);
 
   // Financial score inputs
   const [altmanZ, setAltmanZ] = useState(1.5);
@@ -94,56 +102,54 @@ export function DistressRadar() {
   }, []);
 
   const selectedInvestment = investments.find((i) => i.id === selectedId);
+  const fin = useFinancials(selectedId || null);
 
-  // Auto-load financials when investment changes
+  // Auto-calculate the quantitative scores from the shared financials store
+  // using the real Altman/Piotroski/Beneish adapters. Values remain editable —
+  // the user can still override any field before running the radar.
   useEffect(() => {
     if (!selectedId) {
       setAutoCalcStatus('none');
+      setAutoMissingFields([]);
       return;
     }
-    setAutoCalcStatus('none');
-    getFinancials(selectedId).then((rows) => {
-      if (rows.length === 0) {
-        setAutoCalcStatus('missing');
-        return;
-      }
+    const { current, prior, rows, status, missingFields } = fin;
+    if (!current) {
+      setAutoCalcStatus('missing');
+      setAutoMissingFields([]);
+      return;
+    }
 
-      const latest = rows[0];
-      const prior = rows[1];
+    const altman = calculateAltmanZFromFinancials(current, {
+      marketCap: selectedInvestment?.market_cap ?? null,
+    });
+    if ('z' in altman) setAltmanZ(parseFloat(altman.z.toFixed(2)));
 
-      // Auto-calculate Altman Z from stored financials
-      // Simplified: use ratio proxies available in StoredFinancials
-      // Full Altman Z needs market cap and book equity, which we don't store — use distress proxy
-      const totalLiabilities = latest.totalDebt ?? 0;
-      const totalAssets = latest.totalAssets || 1;
-      const x1 = (latest.workingCapital ?? 0) / totalAssets;
-      const x2 = 0; // retained earnings not stored
-      const x3 = ((latest.ebitda ?? 0) * 0.7) / totalAssets; // EBIT proxy from EBITDA
-      const x4 = 1.0; // market cap / liabilities — unknown, default neutral
-      const x5 = (latest.revenue ?? 0) / totalAssets;
-      const calculatedZ = Math.max(0, 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 1.0 * x5);
+    const pio = calculatePiotroskiFFromFinancials(current, prior);
+    if ('score' in pio) setPiotroskiF(pio.score);
+    // Prior-year F-Score needs a third year (prior vs the year before it).
+    if (rows[1] && rows[2]) {
+      const pioPrior = calculatePiotroskiFFromFinancials(rows[1], rows[2]);
+      if ('score' in pioPrior) setPiotroskiFPrior(pioPrior.score);
+    }
 
-      // Beneish M: simplified proxy — use -2.22 (not manipulator) as default since full M needs 8 ratios
-      const calculatedM = -2.22;
+    const beneish = calculateBeneishMFromFinancials(current, prior);
+    if ('mScore' in beneish) setBeneishM(parseFloat(beneish.mScore.toFixed(2)));
 
-      setAltmanZ(parseFloat(calculatedZ.toFixed(2)));
-      setBeneishM(calculatedM);
-      setFcfCurrent(latest.fcf ?? 0);
-      setDebtToEbitda(
-        (latest.ebitda ?? 0) > 0
-          ? parseFloat(((latest.totalDebt ?? 0) / (latest.ebitda ?? 1)).toFixed(2))
-          : debtToEbitda,
-      );
-      setWorkingCapitalCurrent(latest.workingCapital ?? 0);
+    setFcfCurrent(current.fcf ?? 0);
+    setWorkingCapitalCurrent(current.workingCapital ?? 0);
+    if (prior) {
+      setFcfPrior(prior.fcf ?? 0);
+      setWorkingCapitalPrior(prior.workingCapital ?? 0);
+    }
+    const ebitda = current.ebitda ?? 0;
+    const debt = current.totalDebt ?? current.totalLiabilities ?? 0;
+    if (ebitda > 0) setDebtToEbitda(parseFloat((debt / ebitda).toFixed(2)));
 
-      if (prior) {
-        setFcfPrior(prior.fcf ?? 0);
-        setWorkingCapitalPrior(prior.workingCapital ?? 0);
-      }
-
-      setAutoCalcStatus('loaded');
-    }).catch(console.error);
-  }, [selectedId]);
+    setAutoCalcStatus(status === 'loaded' ? 'loaded' : 'incomplete');
+    setAutoMissingFields(missingFields);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, fin.status, fin.current, fin.prior, selectedInvestment?.market_cap]);
 
   async function handleCheck() {
     if (!selectedInvestment) {
@@ -207,14 +213,33 @@ export function DistressRadar() {
         {autoCalcStatus === 'loaded' && (
           <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg border border-green-200">
             <span className="text-green-500 text-sm">&#10003;</span>
-            <span className="text-xs text-green-700 font-medium">Auto-calculated from stored financials</span>
-            <span className="text-xs text-green-600">— Piotroski F must still be entered manually</span>
+            <span className="text-xs text-green-700 font-medium">
+              Altman Z, Piotroski F and Beneish M auto-calculated from stored financials
+            </span>
+          </div>
+        )}
+        {autoCalcStatus === 'incomplete' && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+            <span className="text-amber-500 text-lg">&#9888;</span>
+            <span className="text-xs text-amber-700">
+              Partial data — some scores use stored values; still missing:{' '}
+              {autoMissingFields.join(', ') || 'market cap'}.{' '}
+              <a href={`#/financials/${selectedId}`} className="underline">
+                Complete in Financials
+              </a>
+            </span>
           </div>
         )}
         {autoCalcStatus === 'missing' && (
           <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
             <span className="text-amber-500 text-lg">&#9888;</span>
-            <span className="text-xs text-amber-700">No financial data found — enter values manually or run the Screener first</span>
+            <span className="text-xs text-amber-700">
+              No financial data found —{' '}
+              <a href={`#/financials/${selectedId}`} className="underline">
+                add it in Financials
+              </a>{' '}
+              or enter values manually below.
+            </span>
           </div>
         )}
 

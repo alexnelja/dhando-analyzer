@@ -37,6 +37,10 @@ export interface InvestmentRow {
   moat_score: number | null;
   management_score: number | null;
   circle_of_competence_fit: number | null;
+  /** Market capitalisation of equity (used by the Altman Z adapter). */
+  market_cap: number | null;
+  /** 1 when EODHD had no fundamentals and statements must be entered manually. */
+  needs_manual_financials: number;
   user_id: string;
   created_at: string;
   updated_at: string;

@@ -47,6 +47,8 @@ export interface InvestmentRow {
   moat_score: number | null;
   management_score: number | null;
   circle_of_competence_fit: number | null;
+  market_cap: number | null;
+  needs_manual_financials: number;
   user_id: string;
   created_at: string;
   updated_at: string;
@@ -165,6 +167,8 @@ export async function addWatchlistEntry(data: WatchlistEntry): Promise<string> {
     moat_score: null,
     management_score: null,
     circle_of_competence_fit: null,
+    market_cap: null,
+    needs_manual_financials: 0,
     user_id: 'solo-investor',
     created_at: now,
     updated_at: now,

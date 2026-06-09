@@ -125,7 +125,30 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('dhando:watchlist:add', (_event, data: Parameters<typeof addToWatchlist>[1]) => {
-    return addToWatchlist(getDb(), data);
+    const newId = addToWatchlist(getDb(), data);
+
+    // Auto-pull EODHD fundamentals in the background so the financials store is
+    // populated by the time the user opens the company. Do not await — the
+    // handler returns the id immediately so the UI stays responsive.
+    const ticker = data?.ticker;
+    if (ticker) {
+      financialsPull(getDb(), eodhdFetcher, newId, ticker, 2)
+        .then(() => emitFinancialsChanged(newId))
+        .catch((err: unknown) => {
+          console.error('[watchlist:add] EODHD pull failed', {
+            ticker,
+            err: err instanceof Error ? err.message : String(err),
+          });
+          // pullAndSave already flags empty results; belt-and-braces on throw.
+          getDb().run(
+            `UPDATE investments SET needs_manual_financials = 1 WHERE id = ?`,
+            newId,
+          );
+          emitFinancialsChanged(newId);
+        });
+    }
+
+    return newId;
   });
 
   ipcMain.handle('dhando:watchlist:advance', (_event, id: string) => {

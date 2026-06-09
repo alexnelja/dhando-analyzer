@@ -549,6 +549,26 @@ export function Watchlist() {
                     <tr>
                       <td colSpan={7} className="px-4 py-4 bg-gray-50/80 border-t border-gray-100">
                         <div className="max-w-2xl space-y-3">
+                          {row.needs_manual_financials ? (
+                            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                              <span className="text-amber-500">&#9888;</span>
+                              <span className="text-xs text-amber-700 flex-1">
+                                Financials not available from EODHD — enter them manually.
+                              </span>
+                              <a
+                                href={`#/financials/${row.id}`}
+                                className="px-2.5 py-1 rounded text-xs font-medium bg-amber-500 text-white hover:bg-amber-400"
+                              >
+                                Enter manually
+                              </a>
+                              <a
+                                href={`#/financials/${row.id}`}
+                                className="px-2.5 py-1 rounded text-xs font-medium border border-amber-300 text-amber-700 hover:bg-amber-100"
+                              >
+                                Try Claude extract
+                              </a>
+                            </div>
+                          ) : null}
                           <div>
                             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Investment Thesis</p>
                             {row.notes ? (
