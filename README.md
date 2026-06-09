@@ -44,12 +44,39 @@ The shared `node_modules` can hold only one build at a time, so the scripts
 toggle it automatically:
 
 - `pnpm --filter @dhando/desktop dev` runs a `predev` hook that rebuilds it for
-  **Electron** (`scripts/rebuild-electron.mjs` → prebuild-install for Electron's
-  target; the `electron-rebuild` CLI is broken on Node 26).
+  **Electron** (`scripts/rebuild-sqlite.mjs electron` → prebuild-install for the
+  Electron target; the `electron-rebuild` CLI is broken on Node 26).
 - `pnpm test` runs a `pretest` hook that rebuilds it for **Node**.
 
 If you ever hit `NODE_MODULE_VERSION` errors, just run the matching command —
 `pnpm --filter @dhando/desktop rebuild:electron` or `…rebuild:node`.
+
+## Packaging for distribution
+
+Built with **electron-builder** (config in `packages/desktop/package.json` →
+`build`). The main process is esbuild-bundled (inlining `@dhando/core`, etc.), so
+the only runtime dependency shipped is the native `better-sqlite3` — `asarUnpack`
+extracts its `.node` so it can load. `npmRebuild` is off; the `pack`/`dist`
+scripts run `rebuild:electron` first so the shipped binary matches the Electron ABI.
+
+```bash
+# unpacked .app for local testing (release/<platform>/)
+pnpm --filter @dhando/desktop pack
+
+# installer for the current OS (dmg/zip on mac, nsis on win, AppImage on linux)
+pnpm --filter @dhando/desktop dist
+```
+
+Notes for shipping to other users:
+- **Per-user API keys.** The app ships with no keys; each user enters their own in
+  **Settings** (stored locally in their `userData` DB, never bundled). The repo
+  `.env` is a dev-only fallback.
+- **Architecture.** An arm64 build won't run on Intel Macs (and vice-versa). Build
+  each target on its OS/arch (ideally in CI), or produce a mac universal build.
+- **Code signing.** Builds are currently unsigned (`mac.identity: null`) — other
+  Macs will show a Gatekeeper warning ("can't be opened") unless you sign +
+  notarize with an Apple Developer cert. Windows shows SmartScreen warnings
+  without a cert.
 
 ## Architecture
 
