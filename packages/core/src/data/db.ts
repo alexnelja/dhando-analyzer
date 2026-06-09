@@ -83,6 +83,14 @@ function runMigrations(sqlite: Database.Database): void {
   for (const [c, t] of financialCols) addColumn('financials', c, t);
   addColumn('investments', 'market_cap', 'REAL');
   addColumn('investments', 'needs_manual_financials', 'INTEGER DEFAULT 0');
+
+  // Enforce one row per (investment, period, year, quarter). SQLite treats
+  // distinct NULLs as unique, so annual rows (quarter IS NULL) would not be
+  // de-duplicated by a plain index — IFNULL(quarter, -1) collapses them.
+  sqlite.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_financials_unique
+       ON financials(investment_id, period, year, IFNULL(quarter, -1))`,
+  );
 }
 
 /**
