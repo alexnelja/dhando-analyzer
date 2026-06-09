@@ -33,6 +33,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Desktop's esbuild step resolves @dhando/core via its dist/ output, so
+      # workspace dependencies must be built first (CI gets this from turbo's
+      # dependsOn; `dist` below bypasses turbo).
+      - name: Build workspace dependencies
+        run: pnpm --filter '@dhando/desktop^...' build
+
       # `dist` rebuilds better-sqlite3 for Electron's ABI, builds, and runs
       # electron-builder for the host OS (mac → dmg/zip, win → nsis, linux → AppImage).
       # Builds are unsigned (mac.identity: null); add certs/notarization later.
