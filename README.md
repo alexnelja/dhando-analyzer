@@ -9,11 +9,10 @@ Built:
 - `@dhando/cli` — commands: `analyze`, `distress`, `financials`, `init`, `portfolio`, `rules`, `screen`, `watchlist`.
 - `@dhando/desktop` — Electron app (Vite + React + Tailwind + react-router), IPC to core, JSE stock search w/ ZAC→ZAR conversion, Yahoo Finance live prices, Magic Formula auto-fetch, Polymarket predictions page, AI-powered stakeholder analysis.
 - Rulesets: `rules/graham-criteria.yaml`, `rules/munger-5-checklist.yaml`, `rules/pabrai-9-principles.yaml`.
-- **Shared financial data store** — one SQLite-backed source of truth for company statements. `financials-repo` (CRUD/upsert), EODHD fundamentals puller, Claude text extractor (zod-validated), and `financials-service` (pull/save/reconcile). Auto-computes Altman Z / Piotroski F / Beneish M via `*FromFinancials` adapters. Exposed over `dhando:financials:*` IPC with a `changed` broadcast; the renderer's `useFinancials` hook auto-invalidates. New **Financials** page (editable year grid, EODHD re-pull, Claude extract, reconciliation badges); DistressRadar reads real scores from the store; Watchlist auto-pulls EODHD on add and flags manual-entry-needed.
+- **Shared financial data store** — one SQLite-backed source of truth for company statements. `financials-repo` (CRUD/upsert), EODHD fundamentals puller, Claude text extractor (zod-validated), and `financials-service` (pull/save/reconcile). Auto-computes Altman Z / Piotroski F / Beneish M via `*FromFinancials` adapters. Exposed over `dhando:financials:*` IPC with a `changed` broadcast; the renderer's `useFinancials` hook auto-invalidates. New **Financials** page (editable year grid, EODHD re-pull, Claude extract, reconciliation badges); DistressRadar reads real scores from the store; Watchlist auto-pulls EODHD on add and flags manual-entry-needed; Magic Formula and the Calculator's Valuation tab pre-fill from the store.
 
 WIP:
 - Missing methodologies research (see `docs/MISSING-METHODOLOGIES-RESEARCH.md`).
-- Wire remaining consumer pages (MagicFormula, Calculator) to pre-fill from the shared store.
 
 ## Setup and Run
 

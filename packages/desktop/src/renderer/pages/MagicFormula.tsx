@@ -4,8 +4,10 @@ import {
   listWatchlist,
   calculateMagicFormula,
   fetchFundamentalsForMagicFormula,
+  getFinancials,
   type InvestmentRow,
   type MagicFormulaEntry,
+  type Financial,
 } from '../lib/ipc';
 
 interface MagicFormulaInputs {
@@ -30,10 +32,51 @@ const DEFAULT_INPUTS: MagicFormulaInputs = {
   netFixedAssets: 90000000,
 };
 
-function deriveInputs(inv: InvestmentRow): MagicFormulaInputs {
-  // Use stored data if available, otherwise use defaults
-  // In a fuller implementation these would come from the financials store
+function deriveInputs(_inv: InvestmentRow): MagicFormulaInputs {
+  // Base row before the shared financials store is consulted (see
+  // deriveInputsFromFinancial, applied asynchronously on mount).
   return { ...DEFAULT_INPUTS };
+}
+
+/**
+ * Build Magic Formula inputs from an investment's most recent stored financial.
+ *
+ * - EBIT falls back to `ebitda - depreciation` when EBIT itself is absent.
+ * - Net working capital falls back to `currentAssets - currentLiabilities`.
+ * - Enterprise value needs the investment's market cap; without it that one
+ *   field keeps its default.
+ * Returns `null` when there is no stored financial to derive from. Any field
+ * that cannot be derived keeps its {@link DEFAULT_INPUTS} value.
+ */
+export function deriveInputsFromFinancial(
+  inv: Pick<InvestmentRow, 'market_cap'>,
+  fin: Financial | undefined,
+): { inputs: MagicFormulaInputs; dataSource: 'manual' | 'eodhd' } | null {
+  if (!fin) return null;
+
+  const ebit =
+    fin.ebit ??
+    (fin.ebitda != null && fin.depreciation != null ? fin.ebitda - fin.depreciation : null);
+  const netWorkingCapital =
+    fin.workingCapital ??
+    (fin.currentAssets != null && fin.currentLiabilities != null
+      ? fin.currentAssets - fin.currentLiabilities
+      : null);
+  const netFixedAssets = fin.ppe;
+  const enterpriseValue =
+    inv.market_cap != null
+      ? inv.market_cap + (fin.totalDebt ?? fin.totalLiabilities ?? 0) - (fin.cash ?? 0)
+      : null;
+
+  return {
+    inputs: {
+      ebit: ebit ?? DEFAULT_INPUTS.ebit,
+      enterpriseValue: enterpriseValue ?? DEFAULT_INPUTS.enterpriseValue,
+      netWorkingCapital: netWorkingCapital ?? DEFAULT_INPUTS.netWorkingCapital,
+      netFixedAssets: netFixedAssets ?? DEFAULT_INPUTS.netFixedAssets,
+    },
+    dataSource: fin.source === 'api' ? 'eodhd' : 'manual',
+  };
 }
 
 function rankBadgeStyle(rank: number, total: number): React.CSSProperties {
@@ -73,15 +116,36 @@ export function MagicFormula() {
   const [fetchBanner, setFetchBanner] = useState<string | null>(null);
 
   useEffect(() => {
-    listWatchlist()
-      .then((invs) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const invs = await listWatchlist();
+        if (cancelled) return;
         setInvestments(invs);
         setEditableRows(
           invs.map((inv) => ({ inv, inputs: deriveInputs(inv), dataSource: 'manual' as const })),
         );
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+
+        // Pre-fill from the shared financials store where available.
+        const fins = await Promise.all(
+          invs.map((inv) => getFinancials(inv.id).catch(() => [] as Financial[])),
+        );
+        if (cancelled) return;
+        setEditableRows((prev) =>
+          prev.map((r, i) => {
+            const patch = deriveInputsFromFinancial(r.inv, fins[i]?.[0]);
+            return patch ? { ...r, inputs: patch.inputs, dataSource: patch.dataSource } : r;
+          }),
+        );
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleRun = useCallback(() => {

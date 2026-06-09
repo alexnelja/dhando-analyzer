@@ -12,8 +12,9 @@ Workflow: tests-first TDD. Write the failing test, then implement.
   - [x] core exports (Task 9); IPC handlers + preload bridge + `changed` event (Tasks 10–11)
   - [x] `useFinancials` hook + Financials page (Tasks 12–13)
   - [x] DistressRadar real-adapter scores; Watchlist auto-pull + manual-needed banner (Tasks 14–16)
-  - [x] cleanup + full verification: 1027 core + 89 desktop tests green, monorepo build clean (Task 17)
-  - Follow-up: MagicFormula / Calculator pre-fill from the store (deferred — see README WIP)
+  - [x] cleanup + full verification: monorepo build clean (Task 17)
+  - [x] MagicFormula + Calculator Valuation tab pre-fill from the store
+  - Verified: 1027 core + 101 desktop tests green
 
 ## Next
 - [ ] Phase 5 — portfolio tracker (`docs/superpowers/plans/2026-03-31-phase5-portfolio-tracker.md`)

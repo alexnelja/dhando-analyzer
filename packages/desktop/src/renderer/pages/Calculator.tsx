@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { formatPct, formatMultiple, formatNumber } from '../lib/format';
+import { listWatchlist, getFinancials, type InvestmentRow, type Financial } from '../lib/ipc';
 
 /*
  * Usage example:
@@ -134,9 +135,50 @@ function n(v: string): number {
   return parseFloat(v) || 0;
 }
 
+/** Valuation-tab fields that can be pre-filled from a stored financial. */
+export interface ValuationPrefill {
+  roicEbit: string;
+  roicWC: string;
+  roicFA: string;
+  evfcfMktCap: string;
+  evfcfDebt: string;
+  evfcfCash: string;
+  evfcfFCF: string;
+}
+
+const numStr = (v: number | null | undefined): string => (v == null ? '' : String(v));
+
+/**
+ * Map a stored financial (+ the investment's market cap) onto the Valuation
+ * tab's input fields. Pure and string-valued so it can seed `useState` inputs
+ * directly; absent figures map to '' (left blank for the user to fill).
+ */
+export function buildValuationPrefill(
+  fin: Financial,
+  marketCap: number | null,
+): ValuationPrefill {
+  const ebit =
+    fin.ebit ??
+    (fin.ebitda != null && fin.depreciation != null ? fin.ebitda - fin.depreciation : null);
+  const wc =
+    fin.workingCapital ??
+    (fin.currentAssets != null && fin.currentLiabilities != null
+      ? fin.currentAssets - fin.currentLiabilities
+      : null);
+  return {
+    roicEbit: numStr(ebit),
+    roicWC: numStr(wc),
+    roicFA: numStr(fin.ppe),
+    evfcfMktCap: numStr(marketCap),
+    evfcfDebt: numStr(fin.totalDebt ?? fin.totalLiabilities),
+    evfcfCash: numStr(fin.cash),
+    evfcfFCF: numStr(fin.fcf),
+  };
+}
+
 // ── Tab: Valuation ────────────────────────────────────────────────────────────
 
-function ValuationTab() {
+function ValuationTab({ prefill }: { prefill?: ValuationPrefill }) {
   // ROIC
   const [roicNopat, setRoicNopat] = useState('');
   const [roicIC, setRoicIC] = useState('');
@@ -172,6 +214,19 @@ function ValuationTab() {
     return { ev, ratio: ev / n(evfcfFCF) };
   }, [evfcfMktCap, evfcfDebt, evfcfCash, evfcfFCF]);
   const evfcfR = evfcfResult();
+
+  // Seed inputs from a selected investment's stored financials. These remain
+  // freely editable afterwards — what-if overrides are never persisted.
+  useEffect(() => {
+    if (!prefill) return;
+    setRoicEbit(prefill.roicEbit);
+    setRoicWC(prefill.roicWC);
+    setRoicFA(prefill.roicFA);
+    setEvfcfMktCap(prefill.evfcfMktCap);
+    setEvfcfDebt(prefill.evfcfDebt);
+    setEvfcfCash(prefill.evfcfCash);
+    setEvfcfFCF(prefill.evfcfFCF);
+  }, [prefill]);
 
   // Gordon Growth DDM
   const [ddmDiv, setDdmDiv] = useState('');
@@ -1073,15 +1128,55 @@ function MomentumTab() {
 
 export function Calculator() {
   const [activeTab, setActiveTab] = useState<TabId>('valuation');
+  const [investments, setInvestments] = useState<InvestmentRow[]>([]);
+  const [prefillId, setPrefillId] = useState('');
+  const [valuationPrefill, setValuationPrefill] = useState<ValuationPrefill | undefined>(undefined);
+
+  useEffect(() => {
+    listWatchlist().then(setInvestments).catch(console.error);
+  }, []);
+
+  async function handlePrefill(id: string) {
+    setPrefillId(id);
+    if (!id) {
+      setValuationPrefill(undefined);
+      return;
+    }
+    const inv = investments.find((i) => i.id === id);
+    const rows = await getFinancials(id);
+    const current = rows[0];
+    if (current) {
+      setActiveTab('valuation');
+      setValuationPrefill(buildValuationPrefill(current, inv?.market_cap ?? null));
+    }
+  }
 
   return (
     <div className="p-8 max-w-4xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Calculator</h1>
-        <p className="text-gray-500 mt-1 text-sm">
-          Financial methodology calculators — enter inputs and results update automatically.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Calculator</h1>
+          <p className="text-gray-500 mt-1 text-sm">
+            Financial methodology calculators — enter inputs and results update automatically.
+          </p>
+        </div>
+        <div className="shrink-0">
+          <label className="block text-xs text-gray-500 mb-1">Pre-fill from investment</label>
+          <select
+            value={prefillId}
+            onChange={(e) => handlePrefill(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-56"
+          >
+            <option value="">None (manual)</option>
+            {investments.map((inv) => (
+              <option key={inv.id} value={inv.id}>
+                {inv.name}
+                {inv.ticker ? ` (${inv.ticker})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -1104,7 +1199,7 @@ export function Calculator() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'valuation' && <ValuationTab />}
+      {activeTab === 'valuation' && <ValuationTab prefill={valuationPrefill} />}
       {activeTab === 'quality'   && <QualityTab />}
       {activeTab === 'risk'      && <RiskTab />}
       {activeTab === 'growth'    && <GrowthTab />}
