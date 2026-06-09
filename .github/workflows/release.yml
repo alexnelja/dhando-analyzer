@@ -40,7 +40,7 @@ jobs:
         run: pnpm --filter @dhando/desktop dist
 
       - name: Attach installers to the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: false
           files: |
