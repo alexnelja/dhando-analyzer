@@ -114,13 +114,13 @@ export function DistressRadar() {
       // Auto-calculate Altman Z from stored financials
       // Simplified: use ratio proxies available in StoredFinancials
       // Full Altman Z needs market cap and book equity, which we don't store — use distress proxy
-      const totalLiabilities = latest.totalDebt;
+      const totalLiabilities = latest.totalDebt ?? 0;
       const totalAssets = latest.totalAssets || 1;
-      const x1 = latest.workingCapital / totalAssets;
+      const x1 = (latest.workingCapital ?? 0) / totalAssets;
       const x2 = 0; // retained earnings not stored
-      const x3 = (latest.ebitda * 0.7) / totalAssets; // EBIT proxy from EBITDA
+      const x3 = ((latest.ebitda ?? 0) * 0.7) / totalAssets; // EBIT proxy from EBITDA
       const x4 = 1.0; // market cap / liabilities — unknown, default neutral
-      const x5 = latest.revenue / totalAssets;
+      const x5 = (latest.revenue ?? 0) / totalAssets;
       const calculatedZ = Math.max(0, 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 1.0 * x5);
 
       // Beneish M: simplified proxy — use -2.22 (not manipulator) as default since full M needs 8 ratios
@@ -128,13 +128,17 @@ export function DistressRadar() {
 
       setAltmanZ(parseFloat(calculatedZ.toFixed(2)));
       setBeneishM(calculatedM);
-      setFcfCurrent(latest.fcf);
-      setDebtToEbitda(latest.ebitda > 0 ? parseFloat((latest.totalDebt / latest.ebitda).toFixed(2)) : debtToEbitda);
-      setWorkingCapitalCurrent(latest.workingCapital);
+      setFcfCurrent(latest.fcf ?? 0);
+      setDebtToEbitda(
+        (latest.ebitda ?? 0) > 0
+          ? parseFloat(((latest.totalDebt ?? 0) / (latest.ebitda ?? 1)).toFixed(2))
+          : debtToEbitda,
+      );
+      setWorkingCapitalCurrent(latest.workingCapital ?? 0);
 
       if (prior) {
-        setFcfPrior(prior.fcf);
-        setWorkingCapitalPrior(prior.workingCapital);
+        setFcfPrior(prior.fcf ?? 0);
+        setWorkingCapitalPrior(prior.workingCapital ?? 0);
       }
 
       setAutoCalcStatus('loaded');

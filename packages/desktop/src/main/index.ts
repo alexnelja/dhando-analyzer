@@ -30,6 +30,13 @@ import { runDealAnalyzer } from '@dhando/core';
 import { createFredClient } from '@dhando/core';
 import { createFinnhubClient } from '@dhando/core';
 import { createClaudeClient } from '@dhando/core';
+import { pullStatements, type Financial } from '@dhando/core';
+import {
+  financialsGet,
+  financialsSave,
+  financialsPull,
+  financialsExtract,
+} from './financials-handlers.js';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -51,6 +58,17 @@ const finnhubClient = createFinnhubClient(process.env.FINNHUB_API_KEY ?? '');
 const claudeClient = process.env.ANTHROPIC_API_KEY
   ? createClaudeClient(process.env.ANTHROPIC_API_KEY)
   : null;
+
+// Bound EODHD statements fetcher used by financials pull/auto-pull.
+const eodhdFetcher = (ticker: string, years: number) =>
+  pullStatements(process.env.EODHD_API_KEY ?? '', ticker, years);
+
+/** Broadcast a financials-changed event so every window's hook re-fetches. */
+function emitFinancialsChanged(investmentId: string) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('dhando:financials:changed', investmentId);
+  }
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -187,6 +205,36 @@ function registerIpcHandlers() {
   ipcMain.handle('dhando:distress:check', (_event, input: Parameters<typeof runDistressRadar>[0]) => {
     return runDistressRadar(input, getDb());
   });
+
+  // ── Financials (shared data store) ────────────────────────────────────────
+  ipcMain.handle('dhando:financials:get', (_e, investmentId: string) => {
+    return financialsGet(getDb(), investmentId);
+  });
+
+  ipcMain.handle('dhando:financials:save', (_e, financial: Financial) => {
+    financialsSave(getDb(), financial);
+    emitFinancialsChanged(financial.investmentId);
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    'dhando:financials:pull',
+    async (_e, investmentId: string, ticker: string, years = 2) => {
+      const saved = await financialsPull(getDb(), eodhdFetcher, investmentId, ticker, years);
+      emitFinancialsChanged(investmentId);
+      return { saved };
+    },
+  );
+
+  ipcMain.handle(
+    'dhando:financials:extractFromText',
+    async (_e, investmentId: string, text: string) => {
+      if (!claudeClient) throw new Error('ANTHROPIC_API_KEY not configured');
+      const rows = await financialsExtract(getDb(), claudeClient, investmentId, text);
+      emitFinancialsChanged(investmentId);
+      return rows;
+    },
+  );
 
   // ── Private Markets ───────────────────────────────────────────────────────
   ipcMain.handle(

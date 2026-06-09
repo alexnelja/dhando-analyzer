@@ -246,12 +246,16 @@ export function Screener() {
         console.error('[Screener] Failed to persist scores:', saveErr);
       }
 
-      // Save financials to central store so other pages can auto-load them
+      // Save financials to the central store so other pages can auto-load them.
       try {
         const currentYear = new Date().getFullYear();
         await saveFinancials({
+          id: `${selectedInvestment.id}-annual-${currentYear}-A`,
           investmentId: selectedInvestment.id,
+          source: 'manual',
+          period: 'annual',
           year: currentYear,
+          quarter: null,
           revenue: current.revenue,
           netIncome: current.netIncome,
           ebitda: current.ebitda,
@@ -261,7 +265,24 @@ export function Screener() {
           capex: current.capex,
           fcf: current.fcf,
           workingCapital: current.workingCapital,
-          updatedAt: new Date().toISOString(),
+          retainedEarnings: current.retainedEarnings,
+          ebit: current.ebit,
+          totalLiabilities: current.totalLiabilities,
+          longTermDebt: current.longTermDebt,
+          currentAssets: current.currentAssets,
+          currentLiabilities: current.currentLiabilities,
+          sharesOutstanding: current.sharesOutstanding,
+          grossProfit: current.grossProfit,
+          receivables: current.accountsReceivable,
+          ppe: current.ppAndE,
+          depreciation: current.depreciation,
+          sga: current.sgaExpenses,
+          cashFromOps: current.operatingCashFlow,
+          apiValuesJson: null,
+          overriddenFields: null,
+          autoUpdated: false,
+          lastRefresh: null,
+          apiSource: null,
         });
       } catch (saveErr) {
         console.error('[Screener] Failed to save financials:', saveErr);

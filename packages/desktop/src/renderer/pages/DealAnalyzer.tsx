@@ -160,7 +160,7 @@ export function DealAnalyzer() {
     getFinancials(selectedInvestment.id).then((rows) => {
       if (rows.length > 0) {
         const latest = rows[0];
-        setBaseRevenue(latest.revenue);
+        setBaseRevenue(latest.revenue ?? 0);
         setFinancialsLoaded(true);
       }
     }).catch(console.error);

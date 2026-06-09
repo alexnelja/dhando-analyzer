@@ -113,27 +113,15 @@ function saveToStorage(key: string, data: unknown): void {
 }
 
 // ── Central Financial Data Store ──────────────────────────────────────────────
-
-export interface StoredFinancials {
-  investmentId: string;
-  year: number;
-  revenue: number;
-  netIncome: number;
-  ebitda: number;
-  totalAssets: number;
-  totalDebt: number;
-  cash: number;
-  capex: number;
-  fcf: number;
-  workingCapital: number;
-  updatedAt: string;
-}
+// The canonical Financial type is owned by @dhando/core and persisted in SQLite
+// via the dhando:financials:* IPC channels. (No browser-mode fallback — the
+// store is Electron-only.)
+export type { Financial } from '@dhando/core';
 
 // ── In-memory store for browser mode (persisted to localStorage) ──────────────
 let browserWatchlist: InvestmentRow[] = loadFromStorage('dhando_watchlist', []);
 let browserRules: (Rule & { id: string })[] = loadFromStorage('dhando_rules', []);
 let browserPositions: PortfolioPositionRow[] = loadFromStorage('dhando_positions', []);
-let browserFinancials: StoredFinancials[] = loadFromStorage('dhando_financials', []);
 let browserIdCounter = 1;
 
 function generateId(): string {
@@ -804,32 +792,45 @@ export async function runDealAnalysis(input: any): Promise<any> {
   };
 }
 
-// ── Central Financial Data Store (CRUD) ──────────────────────────────────────
+// ── Central Financial Data Store (CRUD over IPC) ─────────────────────────────
 
-export async function saveFinancials(data: StoredFinancials): Promise<void> {
-  if (isElectron) {
-    // IPC call placeholder — not yet wired in main process
-    return;
-  }
-  const existing = browserFinancials.findIndex(
-    (f) => f.investmentId === data.investmentId && f.year === data.year,
-  );
-  if (existing >= 0) {
-    browserFinancials[existing] = data;
-  } else {
-    browserFinancials.push(data);
-  }
-  saveToStorage('dhando_financials', browserFinancials);
+import type { Financial } from '@dhando/core';
+
+/** The financials store is Electron-only; in browser mode these are no-ops. */
+function financialsApi() {
+  return isElectron ? (window as any).dhando.financials : null;
 }
 
-export async function getFinancials(investmentId: string): Promise<StoredFinancials[]> {
-  if (isElectron) {
-    // IPC call placeholder — not yet wired in main process
-    return [];
-  }
-  return browserFinancials
-    .filter((f) => f.investmentId === investmentId)
-    .sort((a, b) => b.year - a.year);
+/** Persist a single (possibly user-edited) financial row. */
+export async function saveFinancials(financial: Financial): Promise<void> {
+  await financialsApi()?.save(financial);
+}
+
+/** Fetch all stored financial rows for an investment (newest period first). */
+export async function getFinancials(investmentId: string): Promise<Financial[]> {
+  return (await financialsApi()?.get(investmentId)) ?? [];
+}
+
+/** Pull fundamentals from EODHD into the store for a ticker. */
+export async function pullFinancials(
+  investmentId: string,
+  ticker: string,
+  years = 2,
+): Promise<{ saved: number }> {
+  return (await financialsApi()?.pull(investmentId, ticker, years)) ?? { saved: 0 };
+}
+
+/** Extract financials from pasted text via Claude and persist them. */
+export async function extractFinancialsFromText(
+  investmentId: string,
+  text: string,
+): Promise<Financial[]> {
+  return (await financialsApi()?.extractFromText(investmentId, text)) ?? [];
+}
+
+/** Subscribe to financials-changed broadcasts; returns an unsubscribe fn. */
+export function onFinancialsChanged(cb: (investmentId: string) => void): () => void {
+  return financialsApi()?.onChanged(cb) ?? (() => {});
 }
 
 // ── Magic Formula ─────────────────────────────────────────────────────────────
