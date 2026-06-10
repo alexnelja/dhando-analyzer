@@ -12,7 +12,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "drizzle-orm": "^0.39.0",
+    "drizzle-orm": "^0.45.2",
     "better-sqlite3": "^12.2.0",
     "js-yaml": "^4.1.0",
     "zod": "^3.23.0"
