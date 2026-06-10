@@ -10,6 +10,17 @@ updates:
       # Bundle dev tooling into one PR to cut noise.
       dev-dependencies:
         dependency-type: development
+    ignore:
+      # Tailwind 4 is a real migration (PostCSS plugin moved to
+      # @tailwindcss/postcss, CSS-first config, renamed utilities) — do it
+      # deliberately, not via a grouped bump. Tracked in ROADMAP.
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
+      # better-sqlite3 has no prebuilt binary for Electron 42's ABI (v146)
+      # yet; the rebuild-sqlite pipeline needs prebuilds. Lift when
+      # WiseLibs/better-sqlite3 releases ship electron-v146 assets.
+      - dependency-name: electron
+        versions: [">=42"]
 
   # Keep the GitHub Actions used in workflows up to date.
   - package-ecosystem: github-actions

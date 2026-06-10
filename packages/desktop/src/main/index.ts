@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env'), quiet: true });
 
 import { createDatabase } from '@dhando/core';
 import {
