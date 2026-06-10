@@ -31,3 +31,5 @@ Workflow: tests-first TDD. Write the failing test, then implement.
 - [x] Packaged Electron distributables — v0.1.0 released 2026-06-10 with mac (arm64) dmg/zip, Windows nsis, Linux AppImage via tag-triggered Release workflow
 - [ ] Intel mac (x64) installer — macos-13 runners are retired; needs electron-builder `--mac --x64` cross-build on macos-14 (rebuild-sqlite script must fetch x64 prebuilds)
 - [ ] Code signing + notarization (builds are currently unsigned; mac users must right-click → Open)
+- [ ] Tailwind 4 migration (PostCSS plugin moved to @tailwindcss/postcss, CSS-first config, renamed utilities; held at v3 during the 2026-06 dep rollout, dependabot major-ignore in place)
+- [ ] Electron 42+ (blocked on better-sqlite3 electron-v146 prebuilds; pinned ^41 with dependabot ignore — lift both when prebuilds ship)

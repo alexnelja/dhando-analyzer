@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+loadEnv({ quiet: true });
 import { Command } from 'commander';
 import { registerInitCommand } from './commands/init.js';
 import { registerWatchlistCommands } from './commands/watchlist.js';
