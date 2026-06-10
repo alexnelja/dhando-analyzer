@@ -14,7 +14,7 @@
   "dependencies": {
     "drizzle-orm": "^0.45.2",
     "better-sqlite3": "^12.2.0",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
