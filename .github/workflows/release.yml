@@ -17,7 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-13, windows-latest, ubuntu-latest]
+        # macos-13 (last Intel runner) is retired and jobs queue forever; mac
+        # builds are arm64-only until an x64 cross-build is added.
+        os: [macos-14, windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
 
